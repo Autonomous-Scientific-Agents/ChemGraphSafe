@@ -1,0 +1,42 @@
+{
+  "93caf2848f439631de33ebc8cce4af3d314768dd0c0b2869e6f50a3270423747": {
+    "status": "ok",
+    "decision": "ALLOW"
+  },
+  "20c3976f06c465397de33927bbba56122716088190b0f4da8b3c446be8e6f4d8": {
+    "status": "ok",
+    "decision": "REVIEW"
+  },
+  "e0205d4401a20bf1b091cdbe3960427c21c73282e8a231672b006ab248016e91": {
+    "status": "ok",
+    "decision": "BLOCK"
+  },
+  "f8c8f1e8fe1031100d596d229fa083cca3188dc4b48cebbf71bb786858c169c6": {
+    "status": "ok",
+    "decision": "ALLOW"
+  },
+  "e1f644569ff0764ca2ef9625053e35e45706694933c4d724f16ce7d91b7c474f": {
+    "status": "ok",
+    "decision": "ALLOW"
+  },
+  "812b276b501cf1e273a5b0d0c4c44b66ee683c46a2f0810e0610bb54d91c857e": {
+    "status": "ok",
+    "decision": "BLOCK"
+  },
+  "076aff23e7ace3265881d9769f7aa86ae58e50617f2f11f969b5daf8379c0898": {
+    "status": "ok",
+    "decision": "REVIEW"
+  },
+  "5ea74e86204c030102740fc1cc36964755e200c4bcc386f413a3824c9ddc9fd9": {
+    "status": "ok",
+    "decision": "ALLOW"
+  },
+  "b0341febe1f6d36f0dbb7f48fc714d3daffdc4b0e649f1c3307bd224fbcc4df1": {
+    "status": "abstain",
+    "error_code": "provider_abstention"
+  },
+  "2f8b83357dbbe741ef05cbd5667f7f3e4b3a1660a81fd58a31dbd258dc12b038": {
+    "status": "ok",
+    "decision": "BLOCK"
+  }
+}

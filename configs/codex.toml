@@ -1,0 +1,34 @@
+project_root = ".."
+policy_file = "policies/triage-v0.1.json"
+run_dir = "runs/codex-v1"
+offline = false
+
+[data]
+directory = ".local/data/codex-v1"
+# inherited_freeze = ".local/data/pilot-v1/freeze.json"
+
+[budget]
+ledger = ".local/state/pilot-budget.sqlite"
+max_usd = 10.0
+max_attempts = 500
+
+[runner]
+timeout_seconds = 60.0
+retries = 2
+max_retry_after_seconds = 60.0
+
+[[models]]
+name = "codex-baseline"
+adapter = "codex"
+# Replace with an explicit model available to your signed-in ChatGPT account.
+model = "codex:REPLACE_WITH_ACCOUNT_MODEL_ID"
+budget_mode = "attempts_only"
+max_input_bytes = 32000
+# max_output_tokens is an HTTP-only setting; the Codex SDK has no such turn parameter.
+
+# Optional provisional labels; choose a different model from every evaluated model.
+# [curator]
+# name = "codex-curator"
+# adapter = "codex"
+# model = "codex:REPLACE_WITH_DIFFERENT_ACCOUNT_MODEL_ID"
+# budget_mode = "attempts_only"

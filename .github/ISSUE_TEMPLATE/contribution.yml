@@ -1,0 +1,34 @@
+name: Hackathon contribution
+description: Propose a bounded data, model, evaluation, or training contribution.
+title: "[Track] "
+body:
+  - type: dropdown
+    id: track
+    attributes:
+      label: Track
+      options:
+        - Data audit and curation
+        - Model adapters
+        - Evaluation and calibration
+        - Fine-tuning and export
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Observable deliverable
+      description: Include the affected interface and explicit scope.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Verification
+      description: State the proof command, expected result, and any source/license requirements.
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies and coordination
+      description: Identify required upstream releases, policy changes, or other contributor work.

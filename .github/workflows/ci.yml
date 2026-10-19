@@ -1,0 +1,29 @@
+name: checks
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  offline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.8.18"
+          enable-cache: true
+      - run: uv sync --locked --extra dev --python 3.12
+      - run: uv run ruff check .
+      - run: uv run ruff format --check src tests
+      - run: uv run pytest -q
+      - run: uv run chemgraphsafe evaluate --config configs/offline.toml
+      - run: uv run chemgraphsafe report --run runs/offline
+  codex-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.8.18"
+          enable-cache: true
+      - run: uv sync --locked --extra dev --extra codex --python 3.12
+      - run: uv run --extra codex pytest -q tests/test_codex_adapter.py

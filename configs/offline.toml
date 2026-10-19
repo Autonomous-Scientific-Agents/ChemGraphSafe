@@ -1,0 +1,19 @@
+project_root = ".."
+policy_file = "policies/triage-v0.1.json"
+run_dir = "runs/offline"
+offline = true
+
+[data]
+loader = "fixture"
+directory = ".local/data/offline-v1"
+fixture = "fixtures/examples.jsonl"
+count = 10
+minimum_per_class = 4
+seed = 42
+similarity_threshold = 0.9
+
+[[models]]
+name = "replay-demo"
+adapter = "replay"
+model = "mock-fixture-v1"
+replay_file = "fixtures/predictions.json"

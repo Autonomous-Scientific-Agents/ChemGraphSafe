@@ -1,0 +1,36 @@
+project_root = ".."
+policy_file = "policies/triage-v0.1.json"
+run_dir = "runs/argo-v1"
+offline = false
+
+[data]
+directory = ".local/data/argo-v1"
+# To retain an existing pilot's examples, split and case order:
+# inherited_freeze = ".local/data/pilot-v1/freeze.json"
+
+[budget]
+ledger = ".local/state/pilot-budget.sqlite"
+max_usd = 10.0
+max_attempts = 500
+
+[runner]
+timeout_seconds = 60.0
+retries = 2
+max_retry_after_seconds = 60.0
+
+[[models]]
+name = "argo-gpt41-mini"
+adapter = "argo"
+model = "argo:gpt-4.1-mini"
+endpoint = "https://apps.inside.anl.gov/argoapi/v1/chat/completions"
+argo_user_env = "ARGO_USER"
+budget_mode = "attempts_only"
+max_input_bytes = 32000
+max_output_tokens = 256
+
+# Optional provisional labels; enable before preparing/freezing a new dataset version.
+# [curator]
+# name = "argo-curator"
+# adapter = "argo"
+# model = "argo:gpt-4.1"
+# budget_mode = "attempts_only"

@@ -1,0 +1,34 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "chemgraphsafe"
+version = "0.1.0"
+description = "Reproducible chemistry request-triage evaluation and dataset curation"
+readme = "README.md"
+requires-python = ">=3.12,<3.14"
+license = "Apache-2.0"
+dependencies = ["httpx>=0.27,<1", "pydantic>=2.9,<3", "typer>=0.12,<1", "numpy>=2,<3", "scikit-learn>=1.5,<2"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<10", "ruff>=0.8,<1"]
+# Matches ChemGraph's SDK notification contract; update its contract tests before upgrading.
+codex = ["openai-codex==0.144.4"]
+
+[project.scripts]
+chemgraphsafe = "chemgraphsafe.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/chemgraphsafe"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = [".agents", ".claude"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B"]
