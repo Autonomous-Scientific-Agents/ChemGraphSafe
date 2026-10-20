@@ -1,5 +1,4 @@
 import json
-from pathlib import Path
 
 import pytest
 
@@ -104,13 +103,15 @@ def test_later_annotations_keep_original_split(config):
 
 def test_config_paths_do_not_depend_on_cwd(tmp_path, monkeypatch):
     configs = tmp_path / "configs"
+    other_cwd = tmp_path / "other"
     configs.mkdir()
+    other_cwd.mkdir()
     file = configs / "test.toml"
     file.write_text(
         'project_root=".."\noffline=true\n[[models]]\nname="demo"\nadapter="replay"\nmodel="mock"\n'
     )
     a = load_config(file)
-    monkeypatch.chdir(Path("/private/tmp"))
+    monkeypatch.chdir(other_cwd)
     b = load_config(file)
     assert a.path(a.budget.ledger) == b.path(b.budget.ledger)
     assert a.path(a.budget.ledger) == tmp_path / ".local/state/pilot-budget.sqlite"
