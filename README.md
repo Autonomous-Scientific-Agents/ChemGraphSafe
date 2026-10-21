@@ -6,6 +6,14 @@ ChatGPT login**, and configurable OpenAI-compatible chat endpoints. Argo and Cod
 requests or generate provisional curation labels. Their contracts are tested offline; live
 measurements are a separate step.
 
+**Project website:** <https://autonomous-scientific-agents.github.io/ChemGraphSafe/>
+
+ChemGraphSafe is a project for the [Open Scientific Intelligence (OSI) Hackathon](https://llmhackathon.github.io/),
+October 21–22, 2026, formerly the LLM Hackathon for Applications in Materials Science & Chemistry.
+The longer-term goal is a safety layer for the [ChemGraph](https://github.com/argonne-lcf/ChemGraph)
+agent. This milestone covers request triage only: no response evaluation, agent/tool execution,
+training, or production enforcement. See [Join the project](#join-the-project) to contribute.
+
 ## Run the offline example
 
 Requires Python 3.12 and [uv](https://docs.astral.sh/uv/). Tested on macOS/Linux; local workflow
@@ -91,6 +99,22 @@ for curation, generic endpoints, accounting, and versioned evaluation instructio
 - `metrics.json` has Wilson intervals, coverage, failures, latency, cost and source/category slices.
   `comparison.csv` is the compact evaluation comparison. `errors.jsonl` and `errors.csv` contain
   IDs and fixed issue codes; join locally to the ignored dataset to inspect request text.
+
+## Join the project
+
+1. Register for the hackathon at [luma.com/ku88xh92](https://luma.com/ku88xh92) and join the
+   hackathon Slack from the [hackathon homepage](https://llmhackathon.github.io/).
+2. Introduce yourself in a [GitHub issue](https://github.com/Autonomous-Scientific-Agents/ChemGraphSafe/issues)
+   or on the hackathon Slack, and name the track you are interested in.
+3. Run the offline example above, then read [CONTRIBUTING.md](CONTRIBUTING.md) and
+   [the contributor tracks](docs/contributor-tracks.md).
+4. Claim one bounded item with the
+   [contribution issue template](https://github.com/Autonomous-Scientific-Agents/ChemGraphSafe/issues/new/choose).
+   State the track, the observable deliverable, and the proof command.
+5. Open a pull request that passes the checks below.
+
+No GPU is needed except for the fine-tuning track. Do not paste safety-dataset request text into
+issues, pull requests, or Slack; share aggregate metrics and ID-only errors.
 
 ## Extend the project
 

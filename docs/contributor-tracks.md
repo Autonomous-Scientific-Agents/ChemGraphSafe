@@ -6,9 +6,9 @@ template for one bounded item; avoid changing shared policy semantics without co
 | Track | First deliverable | Acceptance evidence |
 |---|---|---|
 | Data audit and curation | Audit quarantined IDs; add the SciSafetyBench loader | Provenance/rights record, loader tests, separate challenge-set manifest |
-| Models | Add Kev or Laya serving adapter | Typed input-only contract, native response tests, identity/latency/cost reporting |
-| Evaluation | Add calibration and robustness analysis | Known-answer metric tests, valid probability provenance, explicit denominators, dev-only fitting |
-| Fine-tuning | Design training export and one upstream training recipe | Group-disjoint training set, audited labels, reproducible checkpoint and untouched evaluation |
+| Model adapters | Add Kev or Laya serving adapter | Typed input-only contract, native response tests, identity/latency/cost reporting |
+| Evaluation and calibration | Add calibration and robustness analysis | Known-answer metric tests, valid probability provenance, explicit denominators, dev-only fitting |
+| Fine-tuning and export | Design training export and one upstream training recipe | Group-disjoint training set, audited labels, reproducible checkpoint and untouched evaluation |
 
 ## Suggested issues
 
@@ -21,6 +21,8 @@ template for one bounded item; avoid changing shared policy semantics without co
    PyPI package named `kev`. Map its native typed decisions and real probabilities into `Prediction`.
 4. **Laya adapter.** Follow [upstream serving](https://github.com/NandhaKishorM/laya); establish what
    confidence means before exposing probability metrics. Preserve checkpoint identity.
+   After a Kev or Laya adapter lands, other open System One-compatible models (for example Lev)
+   are welcome as further adapters under the same contract.
 5. **Calibration report.** Add Brier/ECE/reliability plots only for genuine full distributions with
    matching reference provenance. Return N/A for label-only models. Fit thresholds on development
    data only and test empty/missing-class cases.
