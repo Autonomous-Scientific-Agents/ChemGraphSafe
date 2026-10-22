@@ -11,6 +11,23 @@ directory and can reuse the freeze. A data, policy, annotation, model, or decodi
 requires a new data version and freeze. Never silently overwrite an old experiment.
 Reports can be recomputed from stored predictions and include their own code and input hashes.
 
+Run manifests now use execution-identity version 2. The run key includes all runner settings
+(timeout, retries, and maximum retry delay), Python implementation/version, installed runtime
+dependency versions, and preflight Codex settings plus SDK/runtime versions when applicable.
+Development-only dependencies are excluded. The repository lockfile hash, when available, is
+recorded as creation-time provenance; compatibility uses installed runtime versions, so a
+development-tool-only lock change does not invalidate a run. Rejected resumes do not replace
+manifests, references, or predictions. Legacy manifests remain reportable but require a new
+run directory for further evaluation.
+
+Codex now requires an explicit `reasoning_effort` and sends the policy through trusted thread
+instructions instead of serializing chat roles into user text. A fingerprint of this prompt
+contract is part of freeze compatibility, including for Codex curators. Existing Codex freezes
+therefore require a new data directory and freeze; use `data.inherited_freeze` to preserve the
+original examples, splits, and ordering. Do not overwrite a freeze. Runner/runtime-only changes
+can reuse a compatible freeze with a new run directory. These changes do not add immutable
+curation provenance or alter curation's completion/exit-status behavior; those fixes are deferred.
+
 For LLM work, start from `configs/argo.toml` or `configs/codex.toml`, select a new data/run directory,
 add distinct curator/baseline model IDs, and set `data.inherited_freeze` to the original freeze.
 Run prepare, curate, then freeze. Inheritance verifies the exact examples hash and copies split

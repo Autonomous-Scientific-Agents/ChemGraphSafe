@@ -11,7 +11,7 @@ uv run pytest -q                         # single: uv run pytest -q tests/test_w
 uv run chemgraphsafe evaluate --config configs/offline.toml
 uv run chemgraphsafe report --run runs/offline
 ```
-- Codex adapter tests need the optional SDK pinned in `pyproject.toml`: `uv sync --locked --extra dev --extra codex && uv run --extra codex pytest -q tests/test_codex_adapter.py`. Other Codex tests use a fake SDK (`tests/conftest.py`) and run without it.
+- Codex adapter tests need the optional SDK resolved in `uv.lock`: `uv sync --locked --extra dev --extra codex && uv run --extra codex pytest -q tests/test_codex_adapter.py`. Other Codex tests use a fake SDK (`tests/conftest.py`) and run without it. Upgrade the SDK and bundled runtime together and rerun the contract tests; see `docs/llm-adapters.md`.
 - Ruff line length is 100; rules E,F,I,B.
 - CLI subcommands: `data prepare`, `data freeze`, `curate`, `smoke`, `evaluate`, `report` (`src/chemgraphsafe/cli.py`).
 

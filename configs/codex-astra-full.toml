@@ -1,0 +1,36 @@
+# Full eligible SciHazard chemistry pool: 50 benign + 178 harmful requests.
+# The 22 conflicting source labels remain excluded by the loader.
+# SDK/runtime 0.163.0 passed preflight for gpt-6-astra with high effort.
+# The runtime rechecks model availability and effort against the current account.
+project_root = ".."
+policy_file = "policies/triage-v0.1.json"
+run_dir = "runs/codex-astra-full-v1"
+offline = false
+
+[data]
+loader = "scihazard"
+directory = ".local/data/codex-astra-full-v1"
+revision = "f8809e5af23495e469dfc53e99973f74031fcb11"
+count = 228
+minimum_per_class = 50
+seed = 42
+similarity_threshold = 0.9
+# This pool differs from the 100-case pilot, so do not inherit its freeze.
+
+[budget]
+ledger = ".local/state/pilot-budget.sqlite"
+max_usd = 10.0
+max_attempts = 500
+
+[runner]
+timeout_seconds = 180.0
+retries = 1
+max_retry_after_seconds = 60.0
+
+[[models]]
+name = "codex-astra-high"
+adapter = "codex"
+model = "codex:gpt-6-astra"
+reasoning_effort = "high"
+budget_mode = "attempts_only"
+max_input_bytes = 32000

@@ -50,11 +50,19 @@ def test_new_backends_curate_evaluate_report_and_resume(config, mock_argo, fake_
     )
     config.models = [
         ModelConfig(
-            name="baseline", adapter=backend, model=model_ids[0], budget_mode="attempts_only"
+            name="baseline",
+            adapter=backend,
+            model=model_ids[0],
+            budget_mode="attempts_only",
+            reasoning_effort="medium" if backend == "codex" else None,
         )
     ]
     config.curator = ModelConfig(
-        name="curator", adapter=backend, model=model_ids[1], budget_mode="attempts_only"
+        name="curator",
+        adapter=backend,
+        model=model_ids[1],
+        budget_mode="attempts_only",
+        reasoning_effort="medium" if backend == "codex" else None,
     )
     data.prepare(config)
     fake_codex.content = '{"decision":"ALLOW","reason":"legitimate_use"}'
@@ -89,7 +97,13 @@ def test_all_models_preflight_before_inference(config, mock_argo, fake_codex):
         ModelConfig(
             name="argo", adapter="argo", model="argo:gpt-4.1-mini", budget_mode="attempts_only"
         ),
-        ModelConfig(name="codex", adapter="codex", model="codex:test", budget_mode="attempts_only"),
+        ModelConfig(
+            name="codex",
+            adapter="codex",
+            model="codex:test",
+            budget_mode="attempts_only",
+            reasoning_effort="medium",
+        ),
     ]
     fake_codex.account = "apiKey"
     with pytest.raises(ValueError, match="preflight"):
@@ -101,7 +115,13 @@ def test_all_models_preflight_before_inference(config, mock_argo, fake_codex):
 def test_codex_quota_stops_remaining_model_calls(config, fake_codex):
     config.offline = False
     config.models = [
-        ModelConfig(name="codex", adapter="codex", model="codex:test", budget_mode="attempts_only")
+        ModelConfig(
+            name="codex",
+            adapter="codex",
+            model="codex:test",
+            budget_mode="attempts_only",
+            reasoning_effort="medium",
+        )
     ]
     fake_codex.outcome, fake_codex.failure = "failed", "usageLimitExceeded"
     assert not runner.smoke(config)["complete"]
@@ -123,10 +143,125 @@ def test_included_smoke_budget_shared_across_providers(config, mock_argo, fake_c
     ]
     assert runner.smoke(config)["complete"]
     config.models = [
-        ModelConfig(name="codex", adapter="codex", model="codex:test", budget_mode="attempts_only")
+        ModelConfig(
+            name="codex",
+            adapter="codex",
+            model="codex:test",
+            budget_mode="attempts_only",
+            reasoning_effort="medium",
+        )
     ]
     config.run_dir = "runs/codex"
     assert not runner.smoke(config)["complete"]
     ledger = Ledger(config.path(config.budget.ledger), 10, 6)
     assert ledger.summary()["attempts_only"] == 6
     assert ledger.summary()["unreconciled_attempts"] == 0
+
+
+@pytest.mark.parametrize("change", ["verbosity", "runtime", "sdk", "service_tier"])
+def test_codex_runtime_resume_rejected_before_inference_or_artifact_writes(
+    config, fake_codex, change
+):
+    config.offline = False
+    config.models = [
+        ModelConfig(
+            name="codex",
+            adapter="codex",
+            model="codex:test",
+            budget_mode="attempts_only",
+            reasoning_effort="medium",
+        )
+    ]
+    assert runner.smoke(config)["complete"]
+    run = config.run / "smoke"
+    before = {p.name: p.read_bytes() for p in run.iterdir()}
+    if change == "verbosity":
+        fake_codex.effective["model_verbosity"] = "high"
+    elif change == "runtime":
+        fake_codex.runtime_version = "next"
+    elif change == "sdk":
+        fake_codex.sdk.__version__ = "next"
+    else:
+        fake_codex.started_overrides["serviceTier"] = "priority"
+    with pytest.raises(ValueError, match="new run directory"):
+        runner.smoke(config)
+    assert {p.name: p.read_bytes() for p in run.iterdir()} == before
+    assert len(fake_codex.turns) == 5 and runner.ledger_for(config).summary()["attempts"] == 5
+
+
+def test_codex_drift_stops_remaining_model_cases(config, fake_codex, monkeypatch):
+    config.offline = False
+    config.models = [
+        ModelConfig(
+            name="codex",
+            adapter="codex",
+            model="codex:test",
+            budget_mode="attempts_only",
+            reasoning_effort="medium",
+        )
+    ]
+    original = fake_codex.sdk.AsyncThread.turn
+
+    async def change_after_first_turn(self, *args, **kwargs):
+        turn = await original(self, *args, **kwargs)
+        fake_codex.effective["model_verbosity"] = "high"
+        return turn
+
+    monkeypatch.setattr(fake_codex.sdk.AsyncThread, "turn", change_after_first_turn)
+    assert not runner.smoke(config)["complete"]
+    rows = read_rows(config.run / "smoke/predictions.jsonl")
+    assert rows[0]["prediction"]["status"] == "ok"
+    assert rows[1]["prediction"]["error_code"] == "codex_configuration_changed"
+    assert all(
+        r["prediction"]["error_code"] == "not_attempted_codex_configuration_changed"
+        for r in rows[2:]
+    )
+    assert len(fake_codex.turns) == 1 and runner.ledger_for(config).summary()["attempts"] == 2
+
+
+@pytest.mark.parametrize("curator", [False, True])
+def test_codex_prompt_contract_invalidates_freeze(config, monkeypatch, curator):
+    from chemgraphsafe import prompts
+
+    model = ModelConfig(
+        name="codex",
+        adapter="codex",
+        model="codex:test",
+        budget_mode="attempts_only",
+        reasoning_effort="medium",
+    )
+    config.offline = False
+    if curator:
+        config.curator = model
+        config.models = [
+            ModelConfig(
+                name="argo", adapter="argo", model="argo:gpt-4.1", budget_mode="attempts_only"
+            )
+        ]
+    else:
+        config.models = [model]
+    data.prepare(config)
+    data.freeze(config)
+    before = (config.dataset / "freeze.json").read_bytes()
+    monkeypatch.setattr(prompts, "CODEX_BASE_INSTRUCTIONS", "Updated trusted instructions")
+    with pytest.raises(ValueError, match="create a new version"):
+        data.verify_freeze(config)
+    assert (config.dataset / "freeze.json").read_bytes() == before
+
+
+def test_explicit_effort_change_requires_new_freeze(config):
+    config.offline = False
+    config.models = [
+        ModelConfig(
+            name="codex",
+            adapter="codex",
+            model="codex:test",
+            budget_mode="attempts_only",
+            reasoning_effort="medium",
+        )
+    ]
+    data.prepare(config)
+    data.freeze(config)
+    config.models[0].reasoning_effort = "low"
+    with pytest.raises(ValueError, match="create a new version"):
+        data.verify_freeze(config)

@@ -13,6 +13,10 @@ Keep changes scoped to one loader, adapter, metric, or curation improvement.
   in `build_model`, and extend `ModelConfig.adapter`. Only request text/context reaches a model.
   Argo shares the HTTP transport; `codex.py` lazily loads the optional SDK. See
   [LLM adapter setup](docs/llm-adapters.md) for their authentication and accounting contracts.
+- `prompts.py` holds shared classification instructions and Codex's freeze-level prompt
+  fingerprint. `provenance.py` collects installed runtime dependencies without dev extras.
+  Codex constructors expose `runtime_provenance` after no-inference preflight. The runner binds
+  the finalized `run_key` to live adapters before prediction; construction must not spend attempts.
 - `reporting.py`: add metrics with explicit denominators, missing-data behavior, and reference
   provenance. Use successful decisions, native abstentions, and failures in regression cases.
 
@@ -33,9 +37,11 @@ CI uses harmless fixtures and mock HTTP only. Keep keys in your shell environmen
 is documentation, and the program does not automatically load `.env` files.
 
 For Codex changes, also run `uv sync --locked --extra dev --extra codex` followed by
-`uv run --extra codex pytest -q tests/test_codex_adapter.py`. This exercises the pinned SDK's
+`uv run --extra codex pytest -q tests/test_codex_adapter.py`. This exercises the locked SDK's
 actual notification types without launching its runtime or making inference requests. The rest
 of the Codex tests use an async fake SDK and also run without the optional dependency installed.
+For dependency updates, follow the [SDK upgrade workflow](docs/llm-adapters.md#codex-subscription)
+and retain the tested SDK/runtime versions in `uv.lock`.
 
 Do not commit raw downloads, annotations, request text from safety datasets, API responses, or
 local run directories. Share aggregate results and ID-only errors after checking source terms.

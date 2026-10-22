@@ -22,6 +22,8 @@ name = "codex-baseline"
 adapter = "codex"
 # Replace with an explicit model available to your signed-in ChatGPT account.
 model = "codex:REPLACE_WITH_ACCOUNT_MODEL_ID"
+# Required; preflight checks this effort against the selected model's supported values.
+reasoning_effort = "medium"
 budget_mode = "attempts_only"
 max_input_bytes = 32000
 # max_output_tokens is an HTTP-only setting; the Codex SDK has no such turn parameter.
@@ -31,4 +33,5 @@ max_input_bytes = 32000
 # name = "codex-curator"
 # adapter = "codex"
 # model = "codex:REPLACE_WITH_DIFFERENT_ACCOUNT_MODEL_ID"
+# reasoning_effort = "medium"
 # budget_mode = "attempts_only"
