@@ -14,6 +14,108 @@ The longer-term goal is a safety layer for the [ChemGraph](https://github.com/ar
 agent. This milestone covers request triage only: no response evaluation, agent/tool execution,
 training, or production enforcement. See [Join the project](#join-the-project) to contribute.
 
+## Jev benchmark quickstart
+
+These commands run the real chemistry/materials datasets with Jev through OpenRouter.
+Use Python 3.12 and [uv](https://docs.astral.sh/uv/) on macOS/Linux, and run commands from this
+repository's root:
+
+```sh
+uv sync --locked --extra dev
+export OPENROUTER_API_KEY="your-key"
+```
+
+The CLI does not load `.env` automatically. Check the model and pricing in the selected TOML
+before live inference. On a fresh checkout, **prepare and freeze the dataset before evaluating**:
+`data prepare` downloads the pinned source files, verifies their checksums, and prepares the
+cases locally. No manual dataset download is needed. Preparation, rule annotation, freezing,
+and reporting make no model inference calls; `smoke` and `evaluate` call Jev.
+
+| Benchmark | Cases sent to Jev | Headline evaluation | Decisions |
+|---|---:|---|---|
+| SciSafetyBench chemistry/materials | 80 | All 80 cases | ALLOW / REVIEW / BLOCK |
+| SciHazard eligible chemistry pool | 228 | 182 evaluation cases; 46 development cases reported separately | ALLOW / BLOCK |
+
+### Run SciSafetyBench with Jev
+
+First download the 40 chemistry and 40 materials-science prompts, generate provisional
+reference labels from their risk categories, and freeze the experiment:
+
+```sh
+uv run chemgraphsafe data prepare --config configs/scisafetybench.toml
+uv run chemgraphsafe data annotate --config configs/scisafetybench.toml
+uv run chemgraphsafe data freeze --config configs/scisafetybench.toml
+```
+
+Before dataset evaluation, create `.local/approvals/scisafetybench.json` using the
+[documented approval template](docs/scisafetybench-loader.md#hosted-processing-approval).
+Record the actual approver, date, and evidence covering the pinned source revision and Jev
+through OpenRouter. Uncomment the top-level `hosted_processing_approval_file` setting in
+`configs/scisafetybench.toml`, before `[data]`, and point it to that file. Local approval records
+are not included in Git and are not supplied by cloning this repo.
+
+```sh
+# Check authentication and response format with five owned, harmless examples.
+uv run chemgraphsafe smoke --config configs/scisafetybench.toml
+# After the smoke test succeeds and the dataset approval is recorded:
+uv run chemgraphsafe evaluate --config configs/scisafetybench.toml
+uv run chemgraphsafe report --run runs/scisafetybench-chem-materials-v2
+```
+
+Open `runs/scisafetybench-chem-materials-v2/report.md`. Its agreement score uses
+**provisional rule-derived references**, not expert-validated labels. See the
+[SciSafetyBench details](#scisafetybench-chemistry-and-materials-challenge) for interpretation.
+
+### Run the full eligible SciHazard chemistry pool with Jev
+
+The checked-in `configs/pilot-binary.toml` selects 100 cases. For all 228 eligible chemistry
+requests (50 benign and 178 harmful), first create a separate configuration:
+
+```sh
+cp -n configs/pilot-binary.toml configs/jev-scihazard-full-binary.toml
+```
+
+In the copied file, replace these existing values, keeping the other settings unchanged:
+
+| Setting | Value |
+|---|---|
+| Top-level `run_dir` | `"runs/jev-scihazard-full-binary-v2"` |
+| `[data]` → `directory` | `".local/data/jev-scihazard-full-binary-v1"` |
+| `[data]` → `count` | `228` |
+| `[data]` → `minimum_per_class` | `50` |
+
+Leave `inherited_freeze` commented out: the full pool differs from the 100-case pilot.
+SciHazard supplies source labels, so it does not need the `data annotate` step:
+
+```sh
+uv run chemgraphsafe data prepare --config configs/jev-scihazard-full-binary.toml
+uv run chemgraphsafe data freeze --config configs/jev-scihazard-full-binary.toml
+uv run chemgraphsafe smoke --config configs/jev-scihazard-full-binary.toml
+# Continue after the five-case smoke test succeeds:
+uv run chemgraphsafe evaluate --config configs/jev-scihazard-full-binary.toml
+uv run chemgraphsafe report --run runs/jev-scihazard-full-binary-v2
+```
+
+Open `runs/jev-scihazard-full-binary-v2/report.md`. All 228 cases receive inference; the
+headline accuracy uses the 182 evaluation cases. The 22 records with conflicting source labels
+remain excluded. This is the full eligible **chemistry subset**, not the full 12-subject release.
+
+### Resume, compare models, and share results
+
+- For an existing unchanged freeze, skip `data prepare`, `data annotate`, and `data freeze`.
+  Repeat `evaluate` to resume missing/failed cases, then regenerate the report. Successful
+  saved predictions are kept; a completed run does not start a fresh evaluation.
+- Both configurations share the **$10 / 500-attempt** ledger. Running both from scratch uses
+  **318 attempts before retries**, including two five-case smoke tests. Previous calls also
+  consume this shared budget; a new run directory does not reset it.
+- To evaluate another model, copy a config and choose new `data.directory` and `run_dir`
+  values before preparing and freezing. Update the model/provider settings and any applicable
+  approval. A changed model cannot reuse the old model's freeze. See
+  [adapter configuration](docs/llm-adapters.md) and [versioning](docs/evaluation.md).
+- The `report --run` path must match the config's `run_dir`. Each run also writes `metrics.json`
+  and `comparison.csv`. Share aggregate reports and the configuration used; keep credentials,
+  raw dataset requests, and local approval records private.
+
 ## Run the offline example
 
 Requires Python 3.12 and [uv](https://docs.astral.sh/uv/). Tested on macOS/Linux; local workflow
@@ -108,15 +210,13 @@ under one shared ALLOW/REVIEW/BLOCK oversight policy, using the existing Jev ada
 prompts are preserved. Native binary labels are absent; an offline category mapping produces
 **37 BLOCK / 43 REVIEW provisional references**, with no ALLOW references or LLM curation.
 
-```sh
-uv run chemgraphsafe data prepare --config configs/scisafetybench.toml
-uv run chemgraphsafe data annotate --config configs/scisafetybench.toml
-uv run chemgraphsafe data freeze --config configs/scisafetybench.toml
-```
+Follow the [Jev quickstart commands](#run-scisafetybench-with-jev) for preparation, rule annotation,
+freezing, the approval prerequisite, and live evaluation/reporting.
 
-These steps make no inference calls. All 80 prompts are evaluation cases; preparation validates
-the pinned files and groups across both domains without sampling. Live dataset evaluation requires
-a recorded approval for the source revision and model destination; the preset supplies none.
+Preparation, rule annotation, and freezing make no inference calls. All 80 prompts are evaluation
+cases; preparation validates the pinned files and groups across both domains without sampling.
+Live dataset evaluation requires a recorded approval for the source revision and model destination;
+the preset supplies none.
 Follow the [approval workflow](docs/scisafetybench-loader.md#hosted-processing-approval) before live
 `evaluate`. Owned `smoke` prompts do not require dataset approval. The preset uses new `v2` data
 and `runs/scisafetybench-chem-materials-v2` run directories and the existing $10/500-attempt ledger.
