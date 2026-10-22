@@ -11,7 +11,7 @@ import httpx
 
 from .budget import BudgetExceeded, Ledger
 from .config import Config, ModelConfig
-from .models import Prediction, Request, policy_labels
+from .models import Prediction, Request, policy_labels, question_key
 from .prompts import classification_messages, classification_schema
 from .providers import argo_model
 from .storage import canonical, read_json
@@ -46,9 +46,10 @@ def usage_fields(body: dict) -> dict:
 def parse_decisions(body: dict, *, policy: dict | None = None) -> Prediction:
     common = usage_fields(body)
     answers = body.get("answers")
-    answer = answers.get("triage") if isinstance(answers, dict) else None
+    key = question_key(policy)
+    answer = answers.get(key) if isinstance(answers, dict) else None
     if not isinstance(answer, dict):
-        raise ValueError("Expected a triage answer object")
+        raise ValueError(f"Expected a {key} answer object")
     if answer.get("abstention") is True:
         return Prediction(status="abstain", error_code="provider_abstention", **common)
     if answer.get("type") != "choice":
@@ -93,7 +94,7 @@ def _laya_gate_state(answer: dict) -> str | None:
     return state
 
 
-def _laya_input_truncated(body: dict) -> bool:
+def _laya_input_truncated(body: dict, *, key: str) -> bool:
     """Validate Laya 0.4.13's per-request truncation report."""
     usage = body.get("usage")
     if not isinstance(usage, dict):
@@ -114,7 +115,7 @@ def _laya_input_truncated(body: dict) -> bool:
         or not isinstance(questions, list)
         or any(not isinstance(question, str) or not question for question in questions)
         or len(questions) != len(set(questions))
-        or any(question != "triage" for question in questions)
+        or any(question != key for question in questions)
         or truncated != (dropped > 0)
         or truncated != bool(questions)
     ):
@@ -132,14 +133,15 @@ def parse_laya(
     common = usage_fields(body)
     common.pop("provider_cost_usd", None)
     common["returned_model"] = f"{model}@{revision}"
-    truncated = _laya_input_truncated(body)
+    key = question_key(policy)
+    truncated = _laya_input_truncated(body, key=key)
     routing = body.get("routing")
     if not isinstance(routing, dict) or routing.get("model") != model:
         raise ValueError("Laya response did not use the configured checkpoint")
     answers = body.get("answers")
-    answer = answers.get("triage") if isinstance(answers, dict) else None
+    answer = answers.get(key) if isinstance(answers, dict) else None
     if not isinstance(answer, dict) or answer.get("type") != "choice":
-        raise ValueError("Expected a Laya triage choice answer")
+        raise ValueError(f"Expected a Laya {key} choice answer")
     probabilities = answer.get("probabilities")
     if "choice" not in answer or not isinstance(probabilities, dict):
         raise ValueError("Laya decision omitted its choice or distribution")
@@ -250,10 +252,14 @@ class HTTPModel:
                 "model": self.model.model,
                 "state": request.model_dump(),
                 "questions": {
-                    "triage": {
+                    question_key(policy): {
                         "type": "choice",
                         "instructions": policy["instructions"],
-                        "criteria": policy["criteria"],
+                        "criteria": {
+                            label: policy["criteria"][label] for label in policy_labels(policy)
+                        }
+                        if question_key(policy) == "risk_type"
+                        else policy["criteria"],
                     }
                 },
             }
@@ -466,7 +472,7 @@ class LayaModel(HTTPModel):
             "model": self.model.model,
             "state": request.model_dump(),
             "questions": {
-                "triage": {
+                question_key(policy): {
                     "type": "choice",
                     "instructions": policy["instructions"],
                     "criteria": {

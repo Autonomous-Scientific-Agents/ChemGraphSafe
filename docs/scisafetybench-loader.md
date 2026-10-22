@@ -1,5 +1,9 @@
 # SciSafetyBench chemistry and materials challenge
 
+This page describes the existing triage option. For direct prediction of the four original
+categories without their conversion to policy actions, see the optional
+[risk-type classification workflow](scisafetybench-risk-type.md).
+
 This integration evaluates **80 original research prompts: 40 Chemistry + 40 Materials Science**,
 using one shared oversight policy and the existing Jev Decisions adapter. It excludes the other
 four domains, tool-risk scenarios, attacks, and SafeSci. No prompt rewriting or LLM curation is used.

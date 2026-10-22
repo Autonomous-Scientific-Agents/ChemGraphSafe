@@ -65,6 +65,10 @@ confusion and macro-F1 use the active two- or three-class label set, and still r
 
 ## SciSafetyBench all-evaluation protocol
 
+The optional [native risk-type task](scisafetybench-risk-type.md) uses this same all-evaluation
+subset, but scores the four source categories directly. It skips annotation and has separate
+data/run directories and a task-specific freeze protocol. The triage workflow below is unchanged.
+
 `configs/scisafetybench.toml` uses `data.protocol="challenge_eval"`, retaining all 80 chemistry
 and materials prompts in evaluation with seed-42 ordering. Native binary `source_label` is null.
 The default SciHazard `balanced_pilot` class/split gates are unchanged. Optional new settings are

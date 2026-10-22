@@ -10,10 +10,10 @@ from .adapters import parse_classification
 from .budget import BudgetExceeded
 from .models import Prediction
 from .prompts import (
-    CODEX_BASE_INSTRUCTIONS,
     classification_input,
     classification_instructions,
     classification_schema,
+    codex_base_instructions,
 )
 from .storage import canonical, digest
 
@@ -158,7 +158,7 @@ async def validate_selection(codex, model, effort):
         seen.add(cursor)
 
 
-async def start_thread(sdk, codex, *, model, cwd, instructions, config):
+async def start_thread(sdk, codex, *, model, cwd, instructions, config, base_instructions):
     """Keep the typed start response that the high-level SDK otherwise discards."""
     started = plain(
         await codex._client.thread_start(
@@ -170,7 +170,7 @@ async def start_thread(sdk, codex, *, model, cwd, instructions, config):
                 "approvalPolicy": "never",
                 "sandbox": "read-only",
                 "personality": "none",
-                "baseInstructions": CODEX_BASE_INSTRUCTIONS,
+                "baseInstructions": base_instructions,
                 "developerInstructions": instructions,
                 "config": config,
             }
@@ -179,7 +179,7 @@ async def start_thread(sdk, codex, *, model, cwd, instructions, config):
     return sdk.AsyncThread(codex, started["thread"]["id"]), started
 
 
-def runtime_identity(sdk, codex, effective, started, instructions, schema):
+def runtime_identity(sdk, codex, effective, started, instructions, schema, base_instructions):
     server = plain(codex.metadata)["serverInfo"]
     result = {
         "sdk_version": sdk.__version__,
@@ -191,7 +191,7 @@ def runtime_identity(sdk, codex, effective, started, instructions, schema):
         "service_tier": started.get("serviceTier"),
         **{key: effective.get(key) for key in EFFECTIVE_SETTINGS},
         "instructions_hash": digest(
-            {"base": CODEX_BASE_INSTRUCTIONS, "developer": instructions, "schema": schema}
+            {"base": base_instructions, "developer": instructions, "schema": schema}
         ),
     }
     for key in ("sdk_version", "runtime_version", "runtime_name", "model", "reasoning_effort"):
@@ -259,6 +259,9 @@ class CodexModel:
     async def _invoke(self, request=None, policy=None):
         common, turn, consumer = {}, None, None
         result = Prediction(status="error", error_code="codex_error")
+        base_instructions = codex_base_instructions(
+            policy if policy is not None else self.config.policy
+        )
         schema = classification_schema(
             policy if policy is not None else self.config.policy, self.curator
         )
@@ -314,9 +317,16 @@ class CodexModel:
                         cwd=cwd,
                         instructions=instructions,
                         config=thread_config,
+                        base_instructions=base_instructions,
                     )
                     observed = runtime_identity(
-                        self.sdk, codex, effective, metadata, instructions, schema
+                        self.sdk,
+                        codex,
+                        effective,
+                        metadata,
+                        instructions,
+                        schema,
+                        base_instructions,
                     )
                     if (
                         observed["reasoning_effort"] != self.model.reasoning_effort
@@ -391,7 +401,7 @@ class CodexModel:
     def predict(self, request, policy):
         schema = classification_schema(policy, self.curator)
         submitted = {
-            "base_instructions": CODEX_BASE_INSTRUCTIONS,
+            "base_instructions": codex_base_instructions(policy),
             "developer_instructions": classification_instructions(policy, schema),
             "input": classification_input(request),
             "output_schema": schema,

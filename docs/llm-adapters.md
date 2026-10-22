@@ -13,6 +13,11 @@ Argo, and Codex receive a two-label output schema. Parsing checks the active pol
 response shape. Binary curators use only `legitimate_use` or `harm_facilitation`. Select new
 data/run directories when switching policies; see [binary evaluation](evaluation.md#binary-policy-option).
 
+All adapters also support the optional `task="scisafetybench_risk_type"` with its matching
+definition file. Jev and Laya use the `risk_type` choice question; other adapters retain `decision`
+with a four-category enum. This task scores source-native labels and does not support curation.
+See [risk-type classification](scisafetybench-risk-type.md) for the preset and workflow.
+
 ## Laya local service
 
 The Laya adapter evaluates the upstream [`laya[serve]`](https://github.com/NandhaKishorM/laya)

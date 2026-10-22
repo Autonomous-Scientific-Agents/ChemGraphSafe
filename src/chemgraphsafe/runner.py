@@ -6,7 +6,15 @@ from contextlib import ExitStack
 from .adapters import build_model
 from .budget import Ledger
 from .config import Config
-from .data import annotations, ensure_unfrozen, examples, freeze, prepare, verify_freeze
+from .data import (
+    annotations,
+    ensure_unfrozen,
+    examples,
+    freeze,
+    prepare,
+    reject_risk_annotations,
+    verify_freeze,
+)
 from .models import Annotation, Example, Prediction, PredictionRow, Request
 from .provenance import EXECUTION_VERSION, environment_identity
 from .rights import check_hosted_rights, check_rights_evidence
@@ -87,6 +95,8 @@ class ModelLabeler:
 
 
 def curate(config: Config):
+    if config.task == "scisafetybench_risk_type":
+        raise ValueError("Risk-type classification uses source labels; skip curate")
     ensure_unfrozen(config)
     if config.annotation_rule:
         raise ValueError("Use data annotate for configured rule-derived references")
@@ -135,6 +145,8 @@ def curate(config: Config):
 
 
 def _run_models(config: Config, rows: list[Example], split: dict, identity: dict, run_path):
+    _ = config.policy
+    reject_risk_annotations(config)
     approval = None
     if not config.offline:
         check_rights_evidence(rows)
@@ -206,11 +218,19 @@ def _run_preflighted(config, rows, split, identity, run_path, ledger, adapters, 
             "Mutable aliases may not expose their underlying checkpoint.",
         ],
     }
+    if config.task != "triage":
+        manifest["task"] = config.task
+        manifest["limitations"] = [
+            "Risk-type agreement measures source-category classification, not agent safety.",
+            "Source categories may overlap or depend on intent not observable in the prompt.",
+            "Mutable aliases may not expose their underlying checkpoint.",
+        ]
     manifest_path = run_path / "manifest.json"
     if manifest_path.exists():
         old = read_json(manifest_path)
         if (
             old.get("manifest_version") != EXECUTION_VERSION
+            or old.get("task", "triage") != config.task
             or old["run_key"] != run_key
             or old["ledger_path"] != manifest["ledger_path"]
             or old.get("execution_hash") != execution_hash
@@ -235,6 +255,21 @@ def _run_preflighted(config, rows, split, identity, run_path, ledger, adapters, 
             "group": e.group,
             "split": split[e.id],
             "annotation": ann[e.id].model_dump() if e.id in ann else None,
+            **(
+                {
+                    "source_risk_type": e.category if split[e.id] != "smoke" else None,
+                    "reference_origin": (
+                        "source_native" if e.source == "SciSafetyBench" else "owned_fixture"
+                    )
+                    if split[e.id] != "smoke"
+                    else None,
+                    "source_revision": e.source_revision,
+                    "source_id": e.source_id,
+                    "source_split": e.source_split,
+                }
+                if config.task == "scisafetybench_risk_type"
+                else {}
+            ),
         }
         for e in rows
     ]

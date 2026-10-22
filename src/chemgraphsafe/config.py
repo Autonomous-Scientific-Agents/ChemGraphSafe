@@ -8,7 +8,7 @@ from urllib.parse import urlsplit
 
 from pydantic import Field, model_validator
 
-from .models import Record, policy_labels
+from .models import Record, Task, policy_labels, policy_task, risk_baselines
 from .prompts import codex_prompt_contract
 from .providers import ARGO_ENDPOINT, ARGO_WITHOUT_TEMPERATURE, argo_model, model_identity
 from .storage import digest, read_json
@@ -202,6 +202,7 @@ class RunnerConfig(Record):
 
 
 class Config(Record):
+    task: Task = "triage"
     project_root: str = ".."
     policy_file: str = "policies/triage-v0.1.json"
     run_dir: str = "runs/pilot"
@@ -218,6 +219,7 @@ class Config(Record):
 
     @model_validator(mode="after")
     def distinct(self):
+        self.validate_task_config()
         if self.annotation_rule and (self.curator or self.data.protocol != "challenge_eval"):
             raise ValueError("Rule annotations require challenge_eval without a curator")
         names = [m.name for m in self.models]
@@ -235,6 +237,23 @@ class Config(Record):
             raise ValueError("Live comparison cannot include replay scores")
         return self
 
+    def validate_task_config(self):
+        if self.task == "scisafetybench_risk_type":
+            if self.curator or self.annotation_rule:
+                raise ValueError(
+                    "Risk-type classification uses source labels, not annotations/curation"
+                )
+            if self.data.protocol != "challenge_eval" or not (
+                self.data.loader == "scisafetybench"
+                or (self.offline and self.data.loader == "fixture")
+            ):
+                raise ValueError(
+                    "Risk-type classification requires SciSafetyBench challenge_eval "
+                    "or offline challenge fixtures"
+                )
+            if any(m.name in risk_baselines() for m in self.models):
+                raise ValueError("Model name is reserved for a risk-type diagnostic baseline")
+
     def path(self, name: str) -> Path:
         p = Path(name)
         return (self.root / p).resolve() if not p.is_absolute() else p.resolve()
@@ -249,7 +268,10 @@ class Config(Record):
 
     @property
     def policy(self) -> dict:
+        self.validate_task_config()
         p = read_json(self.path(self.policy_file))
+        if policy_task(p) != self.task:
+            raise ValueError("Configuration task and policy task differ")
         policy_labels(p)
         return p
 
@@ -260,6 +282,8 @@ class Config(Record):
             "policy": self.policy,
             "offline": self.offline,
         }
+        if self.task != "triage":
+            result["task"] = self.task
         contracts = {}
         if any(m.adapter == "codex" for m in self.models):
             contracts["evaluation"] = codex_prompt_contract(self.policy)
@@ -283,6 +307,9 @@ def load_config(path: Path) -> Config:
     path = path.resolve()
     c = Config.model_validate(tomllib.loads(path.read_text()))
     c.root = (path.parent / c.project_root).resolve()
+    # Legacy configs retain lazy policy loading; the new task validates its definition early.
+    if c.task != "triage":
+        _ = c.policy
     if c.run == c.dataset or c.run in c.dataset.parents or c.dataset in c.run.parents:
         raise ValueError("Run and dataset directories must be separate")
     return c

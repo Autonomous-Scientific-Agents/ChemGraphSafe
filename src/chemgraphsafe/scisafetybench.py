@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 import httpx
 
-from .models import Example, Prediction, Request, RuleAnnotation
+from .models import RISK_TYPES, Example, Prediction, Request, RuleAnnotation
 from .storage import digest, file_hash, read_json
 
 if TYPE_CHECKING:
@@ -26,15 +26,22 @@ SOURCE_FILES = {
     "chem.json": {
         "sha256": "bbac81c6dd744cbd317e65bacf21be473400657ff9c376a244598ba3526ea694",
         "domain": "Chemistry",
-        "risk_counts": dict(zip(RISK_MAPPING, (10, 10, 10, 10), strict=True)),
+        "risk_counts": dict(zip(RISK_TYPES, (10, 10, 10, 10), strict=True)),
     },
     "material.json": {
         "sha256": "fa8eddc3d30f72cda79b8863d014298ad8ce1d7b5c4e6ecb77d1aba29b849c54",
         "domain": "Materials Science",
-        "risk_counts": dict(zip(RISK_MAPPING, (9, 8, 10, 13), strict=True)),
+        "risk_counts": dict(zip(RISK_TYPES, (9, 8, 10, 13), strict=True)),
     },
 }
 RULE_ID = "scisafetybench-risk-v1"
+RECORDS_PER_FILE = 40
+
+
+def example_id(filename: str, index: int) -> str:
+    return "scisafetybench-" + digest([REVISION, filename, index])[:20]
+
+
 # Semantic hash binds this mapping to the exact shared oversight policy, not just its filename.
 POLICY_HASH = "aada98a96dd753762ead64004301ffaa8f79dcb0e2535a35eca02c8e8b9d38bd"
 FIELDS = {"Task", "Task Description", "Risk Type", "Source", "Prompt"}
@@ -64,21 +71,21 @@ class SciSafetyBenchLoader:
             if file_hash(path) != spec["sha256"]:
                 raise ValueError(f"Cached source checksum mismatch: {filename}")
             rows = read_json(path)
-            if not isinstance(rows, list) or len(rows) != 40:
-                raise ValueError(f"Expected 40 research records: {filename}")
+            if not isinstance(rows, list) or len(rows) != RECORDS_PER_FILE:
+                raise ValueError(f"Expected {RECORDS_PER_FILE} research records: {filename}")
             for index, row in enumerate(rows):
                 if (
                     not isinstance(row, dict)
                     or set(row) != FIELDS
                     or any(not isinstance(v, str) for v in row.values())
                     or not row["Prompt"].strip()
-                    or row["Risk Type"] not in RISK_MAPPING
+                    or row["Risk Type"] not in RISK_TYPES
                 ):
                     # Deliberately omit raw field values from validation errors.
                     raise ValueError(f"Invalid SciSafetyBench schema/category: {filename}:{index}")
                 examples.append(
                     Example(
-                        id="scisafetybench-" + digest([REVISION, filename, index])[:20],
+                        id=example_id(filename, index),
                         request=Request(text=row["Prompt"]),
                         source="SciSafetyBench",
                         source_id=f"{filename}:{index}",
@@ -100,6 +107,43 @@ class SciSafetyBenchLoader:
             if Counter(row["Risk Type"] for row in rows) != spec["risk_counts"]:
                 raise ValueError(f"SciSafetyBench category counts changed: {filename}")
         return examples
+
+
+def validate_risk_references(config: "Config", rows: list[Example]):
+    """Bind native references to the cached, checksum-verified source before freezing."""
+    if set(e.category for e in rows) != set(RISK_TYPES) or any(
+        e.source_label is not None for e in rows
+    ):
+        raise ValueError("Risk-type references require all four categories and no binary labels")
+    if config.data.loader == "fixture" and config.offline:
+        return
+    if config.data.revision != REVISION or len(rows) != RECORDS_PER_FILE * len(SOURCE_FILES):
+        raise ValueError("Risk-type references require the pinned 80-case source")
+    index = {e.source_id: e for e in rows}
+    if len(index) != len(rows):
+        raise ValueError("Duplicate risk-type source IDs")
+    for filename, spec in SOURCE_FILES.items():
+        path = config.dataset / "raw" / filename
+        if not path.exists() or file_hash(path) != spec["sha256"]:
+            raise ValueError("Risk-type freeze requires checksum-verified cached source files")
+        source = read_json(path)
+        if (
+            len(source) != RECORDS_PER_FILE
+            or Counter(r["Risk Type"] for r in source) != spec["risk_counts"]
+        ):
+            raise ValueError("Risk-type source category counts changed")
+        for i, row in enumerate(source):
+            e = index.get(f"{filename}:{i}")
+            if e is None or (
+                e.source != "SciSafetyBench"
+                or e.source_revision != REVISION
+                or e.source_split != f"{DATA_PATH}/{filename}"
+                or e.domain != spec["domain"]
+                or e.id != example_id(filename, i)
+                or e.category != row["Risk Type"]
+                or e.request != Request(text=row["Prompt"])
+            ):
+                raise ValueError("Risk-type reference differs from its pinned source record")
 
 
 def rule_spec(rule_id: str, policy: dict) -> dict:
