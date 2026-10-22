@@ -79,23 +79,20 @@ class ModelConfig(Record):
         if self.name in {"always-allow", "always-review", "always-block"}:
             raise ValueError("Model name is reserved for a diagnostic baseline")
         if self.adapter == "kev":
-            u = urlsplit(self.endpoint)
             try:
-                port = u.port
+                u = self._endpoint(self.endpoint, local_http=True)
             except ValueError:
-                raise ValueError("Kev requires a valid loopback endpoint port") from None
-            if port is not None and port < 1:
-                raise ValueError("Kev requires a valid loopback endpoint port")
+                u = None
             if (
-                u.scheme != "http"
+                u is None
+                or u.scheme != "http"
                 or u.hostname not in {"127.0.0.1", "::1"}
-                or u.username is not None
-                or u.password is not None
-                or u.query
-                or u.fragment
+                or u.port == 0
                 or u.path != "/v1/systemone"
             ):
-                raise ValueError("Kev requires a literal loopback HTTP /v1/systemone URL")
+                raise ValueError(
+                    "Kev requires a literal loopback HTTP /v1/systemone URL with a valid port"
+                )
             if self.local is None or self.budget_mode != "attempts_only":
                 raise ValueError("Kev requires pinned local settings and attempts_only")
             if self.temperature is not None or self.seed is not None:

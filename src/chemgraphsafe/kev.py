@@ -93,9 +93,6 @@ class KevModel(HTTPModel):
         if observed != self.observed:
             return Prediction(status="error", error_code="local_identity_changed")
 
-    def headers(self):
-        return {"Authorization": f"Bearer {self.key}"} if self.key else {}
-
     def response_fields(self, body: dict):
         # Local compute has no provider dollar charge or comparable generated-token count.
         common = usage_fields(body)

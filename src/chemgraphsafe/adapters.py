@@ -236,7 +236,8 @@ class HTTPModel:
             self.client.close()
 
     def headers(self) -> dict:
-        return {"Authorization": f"Bearer {self.key}"}
+        # Required credentials are checked at construction; optional ones may be absent.
+        return {"Authorization": f"Bearer {self.key}"} if self.key else {}
 
     def response_fields(self, body: dict) -> dict:
         return usage_fields(body)
@@ -454,9 +455,6 @@ class LayaModel(HTTPModel):
             if self.owns_client:
                 self.client.close()
             raise
-
-    def headers(self) -> dict:
-        return {"Authorization": f"Bearer {self.key}"} if self.key else {}
 
     def _preflight(self) -> dict:
         try:
