@@ -1,0 +1,28 @@
+# Setup example. Starting a server or running smoke/evaluate performs real local inference.
+project_root = ".."
+policy_file = "policies/triage-v0.1.json"
+run_dir = "runs/kev-local-v1"
+offline = false
+
+[data]
+loader = "scihazard"
+directory = ".local/data/kev-local-v1"
+count = 100
+minimum_per_class = 40
+seed = 42
+
+[[models]]
+name = "kev-08b"
+adapter = "kev"
+model = "jaredpalmer/kev-0.8b"
+endpoint = "http://127.0.0.1:8008/v1/systemone"
+budget_mode = "attempts_only"
+# Optional: api_key_env = "KEV_API_KEY" when the server requires bearer authentication.
+
+[models.local]
+revision = "bf75a6a8848ea6960ff2ed108d9ed44c2941174f"
+runtime_revision = "1f04cfa28e6a708485b28a9585010b9e436b776e"
+device = "cpu"
+base_model = "Qwen/Qwen3.5-0.8B-Base"
+dtype = "float32"
+calibration_temperature = 2.3510958125672174

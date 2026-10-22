@@ -195,6 +195,8 @@ def parse_classification(
 
 class HTTPModel:
     processing_location = "hosted"
+    credential_required = True
+    retryable_preflight_errors = frozenset()
 
     def __init__(
         self,
@@ -213,7 +215,7 @@ class HTTPModel:
         self.runtime_provenance = None
         identity_env = model.argo_user_env if model.adapter == "argo" else model.api_key_env
         self.key = os.getenv(identity_env, "").strip()
-        if not self.key:
+        if not self.key and (self.credential_required or identity_env):
             raise ValueError(f"Missing credential environment variable: {identity_env}")
         if model.budget_mode == "usd" and (
             model.input_usd_per_million is None
@@ -224,7 +226,9 @@ class HTTPModel:
             raise ValueError(
                 "Live runs require checked pricing and a per-attempt reservation ceiling"
             )
-        self.client = client or httpx.Client(timeout=config.runner.timeout_seconds)
+        self.client = client or httpx.Client(
+            timeout=config.runner.timeout_seconds, trust_env=self.credential_required
+        )
         self.owns_client = client is None
 
     def close(self):
@@ -232,7 +236,8 @@ class HTTPModel:
             self.client.close()
 
     def headers(self) -> dict:
-        return {"Authorization": f"Bearer {self.key}"}
+        # Required credentials are checked at construction; optional ones may be absent.
+        return {"Authorization": f"Bearer {self.key}"} if self.key else {}
 
     def response_fields(self, body: dict) -> dict:
         return usage_fields(body)
@@ -245,7 +250,7 @@ class HTTPModel:
         )
 
     def payload(self, request: Request, policy: dict) -> dict:
-        if self.model.adapter == "decisions":
+        if self.model.adapter in {"decisions", "kev"}:
             if self.curator:
                 raise ValueError("Curation needs a chat model capable of enumerated reason codes")
             return {
@@ -257,9 +262,7 @@ class HTTPModel:
                         "instructions": policy["instructions"],
                         "criteria": {
                             label: policy["criteria"][label] for label in policy_labels(policy)
-                        }
-                        if question_key(policy) == "risk_type"
-                        else policy["criteria"],
+                        },
                     }
                 },
             }
@@ -282,6 +285,12 @@ class HTTPModel:
         if self.model.seed is not None:
             payload["seed"] = self.model.seed
         return payload
+
+    def preflight_attempt(self):
+        return None
+
+    def transport_failure(self, exc):
+        return Prediction(status="error", error_code="network_error")
 
     def _delay(self, response, attempt: int) -> float:
         value = response.headers.get("Retry-After") if response is not None else None
@@ -321,6 +330,25 @@ class HTTPModel:
         has_provider_cost = False
         last = Prediction(status="error", error_code="not_attempted")
         for attempt in range(self.config.runner.retries + 1):
+            preflight_started = time.perf_counter()
+            failure = self.preflight_attempt()
+            if failure is not None:
+                last = failure
+                if (
+                    failure.error_code in self.retryable_preflight_errors
+                    and attempt < self.config.runner.retries
+                ):
+                    delay = self._delay(None, attempt)
+                    if (
+                        not math.isfinite(delay)
+                        or delay > self.config.runner.max_retry_after_seconds
+                    ):
+                        last = Prediction(status="error", error_code="rate_limit_deferred")
+                        break
+                    overhead += (time.perf_counter() - preflight_started) * 1000 + delay * 1000
+                    self.sleep(delay)
+                    continue
+                break
             try:
                 reservation = self.ledger.reserve(
                     self.run_key, reserve, budget_mode=self.model.budget_mode
@@ -338,6 +366,7 @@ class HTTPModel:
                     self.model.endpoint,
                     json=payload,
                     headers=self.headers(),
+                    follow_redirects=False,
                 )
                 if response.status_code == 429 or response.status_code >= 500:
                     retryable = True
@@ -353,9 +382,9 @@ class HTTPModel:
                         last = self.parse_response(body, policy)
                     except (ValueError, TypeError, KeyError, IndexError):
                         last = Prediction(status="error", error_code="schema_error", **common)
-            except httpx.TransportError:
+            except httpx.TransportError as exc:
                 retryable = True
-                last = Prediction(status="error", error_code="network_error")
+                last = self.transport_failure(exc)
             # Unrecognized charges stay reserved, including unsuccessful responses.
             cost = common.get("provider_cost_usd")
             if cost is not None:
@@ -426,9 +455,6 @@ class LayaModel(HTTPModel):
             if self.owns_client:
                 self.client.close()
             raise
-
-    def headers(self) -> dict:
-        return {"Authorization": f"Bearer {self.key}"} if self.key else {}
 
     def _preflight(self) -> dict:
         try:
@@ -544,4 +570,8 @@ def build_model(
             client=client,
             sleep=sleep,
         )
+    if model.adapter == "kev":
+        from .kev import KevModel
+
+        return KevModel(config, model, ledger, run_key, curator=curator, client=client, sleep=sleep)
     return HTTPModel(config, model, ledger, run_key, curator=curator, client=client, sleep=sleep)
