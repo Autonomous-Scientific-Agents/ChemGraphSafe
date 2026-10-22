@@ -1,6 +1,7 @@
 """TOML paths resolve against a declared root, independently of the invoking cwd."""
 
 import tomllib
+from ipaddress import ip_address
 from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit
@@ -42,9 +43,11 @@ class DataConfig(Record):
 
 class ModelConfig(Record):
     name: str = Field(pattern=r"^[a-zA-Z0-9_-]+$")
-    adapter: Literal["decisions", "chat", "replay", "argo", "codex"]
+    adapter: Literal["decisions", "chat", "replay", "argo", "codex", "laya"]
     model: str = Field(min_length=1)
     endpoint: str = ""
+    identity_endpoint: str = ""
+    expected_revision: str = ""
     api_key_env: str = ""
     argo_user_env: str = "ARGO_USER"
     budget_mode: Literal["usd", "attempts_only"] = "usd"
@@ -87,19 +90,26 @@ class ModelConfig(Record):
             self.endpoint = self.endpoint or ARGO_ENDPOINT
             if not self.argo_user_env or self.api_key_env:
                 raise ValueError("Argo requires argo_user_env, not an API key")
-        if self.adapter in {"decisions", "chat", "argo"}:
-            u = urlsplit(self.endpoint)
+        if self.adapter == "laya":
+            if self.budget_mode != "attempts_only":
+                raise ValueError("Laya requires budget_mode='attempts_only'")
             if (
-                u.scheme != "https"
-                or not u.hostname
-                or u.username
-                or u.password
-                or u.query
-                or u.fragment
+                not self.expected_revision
+                or self.expected_revision != self.expected_revision.strip()
             ):
-                raise ValueError(
-                    "Live endpoints must be HTTPS without credentials/query parameters"
-                )
+                raise ValueError("Laya requires an explicit expected_revision")
+            if self.temperature is not None or self.seed is not None:
+                raise ValueError("Laya does not support temperature or seed")
+            decision = self._endpoint(self.endpoint, local_http=True)
+            identity = self._endpoint(self.identity_endpoint, local_http=True)
+            if self._origin(decision) != self._origin(identity):
+                raise ValueError("Laya decision and identity endpoints must share an origin")
+            if self.api_key_env != self.api_key_env.strip():
+                raise ValueError("Laya API key environment-variable name cannot contain whitespace")
+        elif self.identity_endpoint or self.expected_revision:
+            raise ValueError("identity_endpoint and expected_revision are supported only by Laya")
+        if self.adapter in {"decisions", "chat", "argo"}:
+            self._endpoint(self.endpoint)
             if self.adapter != "argo" and not self.api_key_env:
                 raise ValueError("Live adapters need an API key environment-variable name")
         if self.budget_mode == "attempts_only" and (
@@ -112,6 +122,58 @@ class ModelConfig(Record):
             raise ValueError("Attempts-only accounting cannot include dollar pricing/reservations")
         return self
 
+    @staticmethod
+    def _endpoint(value: str, *, local_http: bool = False):
+        if value != value.strip():
+            raise ValueError("Endpoints cannot contain surrounding whitespace")
+        u = urlsplit(value)
+        try:
+            port = u.port
+        except ValueError:
+            port = None
+            valid_port = False
+        else:
+            valid_port = True
+        valid_http = False
+        if local_http and u.scheme == "http" and u.hostname:
+            try:
+                valid_http = ip_address(u.hostname).is_loopback
+            except ValueError:
+                pass
+        if (
+            (u.scheme != "https" and not valid_http)
+            or not u.hostname
+            or not valid_port
+            or u.username
+            or u.password
+            or u.query
+            or u.fragment
+        ):
+            message = "HTTPS is required"
+            if local_http:
+                message += "; plain HTTP is allowed only for a numeric loopback address"
+            raise ValueError(message + " and endpoint credentials/query parameters are forbidden")
+        # Accessing the port above also rejects malformed or out-of-range explicit ports.
+        _ = port
+        return u
+
+    @staticmethod
+    def _origin(endpoint) -> tuple[str, str, int | None]:
+        return endpoint.scheme, endpoint.hostname, endpoint.port
+
+    @property
+    def processing_location(self) -> Literal["local", "hosted"]:
+        if self.adapter == "replay":
+            return "local"
+        if self.adapter == "laya":
+            endpoints = (urlsplit(self.endpoint), urlsplit(self.identity_endpoint))
+            try:
+                if all(ip_address(endpoint.hostname).is_loopback for endpoint in endpoints):
+                    return "local"
+            except ValueError:
+                pass
+        return "hosted"
+
     def spec(self) -> dict:
         """Keep legacy semantic hashes stable when new provider options are unused."""
         result = self.model_dump()
@@ -119,6 +181,9 @@ class ModelConfig(Record):
             result.pop("reasoning_effort")
         if self.adapter != "argo":
             result.pop("argo_user_env")
+        if self.adapter != "laya":
+            result.pop("identity_endpoint")
+            result.pop("expected_revision")
         if self.budget_mode == "usd":
             result.pop("budget_mode")
         return result

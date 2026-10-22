@@ -237,6 +237,8 @@ async def consume(turn, common):
 
 
 class CodexModel:
+    processing_location = "hosted"
+
     def __init__(self, config, model, ledger, run_key, *, curator=False, sleep=time.sleep):
         self.config, self.model = config, model
         self.ledger, self.run_key = ledger, run_key

@@ -64,6 +64,70 @@ def parse_decisions(body: dict, *, policy: dict | None = None) -> Prediction:
     ).validate_policy(policy)
 
 
+def _laya_gate_state(answer: dict) -> str | None:
+    state = answer.get("abstention")
+    gate_fields = {"abstention", "abstention_threshold", "low_confidence"}
+    present = gate_fields & set(answer)
+    if "abstention" not in present:
+        if present:
+            raise ValueError("Incomplete Laya abstention metadata")
+        return None
+    if state not in {"passed", "abstained", "unevaluated"}:
+        raise ValueError("Unknown Laya abstention state")
+    threshold = answer.get("abstention_threshold")
+    if (
+        isinstance(threshold, bool)
+        or not isinstance(threshold, (int, float))
+        or not math.isfinite(threshold)
+        or not 0 <= threshold <= 1
+    ):
+        raise ValueError("Invalid Laya abstention threshold")
+    low_confidence = answer.get("low_confidence")
+    if state == "abstained":
+        if low_confidence is not True:
+            raise ValueError("Abstained Laya answer must be marked low confidence")
+    elif state == "passed" and "low_confidence" in answer and low_confidence is not False:
+        raise ValueError("Only abstained Laya answers may be marked low confidence")
+    elif state == "unevaluated" and "low_confidence" in answer:
+        raise ValueError("Unevaluated Laya answers cannot carry a confidence flag")
+    return state
+
+
+def parse_laya(
+    body: dict,
+    *,
+    model: str,
+    revision: str,
+    policy: dict | None = None,
+) -> Prediction:
+    common = usage_fields(body)
+    common.pop("provider_cost_usd", None)
+    common["returned_model"] = f"{model}@{revision}"
+    routing = body.get("routing")
+    if not isinstance(routing, dict) or routing.get("model") != model:
+        raise ValueError("Laya response did not use the configured checkpoint")
+    answers = body.get("answers")
+    answer = answers.get("triage") if isinstance(answers, dict) else None
+    if not isinstance(answer, dict) or answer.get("type") != "choice":
+        raise ValueError("Expected a Laya triage choice answer")
+    if "choice" not in answer or "probabilities" not in answer:
+        raise ValueError("Laya decision omitted its choice or distribution")
+    # Validate the retained answer even when the confidence gate says not to use it.
+    decision = Prediction(
+        status="ok",
+        decision=answer["choice"],
+        probabilities=answer["probabilities"],
+        probability_origin="native",
+        **common,
+    ).validate_policy(policy)
+    gate = _laya_gate_state(answer)
+    if gate == "abstained":
+        return Prediction(status="abstain", error_code="provider_abstention", **common)
+    if gate == "unevaluated":
+        return Prediction(status="error", error_code="abstention_unevaluated", **common)
+    return decision
+
+
 def parse_chat(body: dict, curator: bool = False, *, policy: dict | None = None) -> Prediction:
     common = usage_fields(body)
     choices = body.get("choices")
@@ -95,6 +159,8 @@ def parse_classification(
 
 
 class HTTPModel:
+    processing_location = "hosted"
+
     def __init__(
         self,
         config: Config,
@@ -109,6 +175,7 @@ class HTTPModel:
         self.config, self.model = config, model
         self.ledger, self.run_key = ledger, run_key
         self.curator, self.sleep = curator, sleep
+        self.runtime_provenance = None
         identity_env = model.argo_user_env if model.adapter == "argo" else model.api_key_env
         self.key = os.getenv(identity_env, "").strip()
         if not self.key:
@@ -128,6 +195,19 @@ class HTTPModel:
     def close(self):
         if self.owns_client:
             self.client.close()
+
+    def headers(self) -> dict:
+        return {"Authorization": f"Bearer {self.key}"}
+
+    def response_fields(self, body: dict) -> dict:
+        return usage_fields(body)
+
+    def parse_response(self, body: dict, policy: dict | None = None) -> Prediction:
+        return (
+            parse_decisions(body, policy=policy)
+            if self.model.adapter == "decisions"
+            else parse_chat(body, self.curator, policy=policy)
+        )
 
     def payload(self, request: Request, policy: dict) -> dict:
         if self.model.adapter == "decisions":
@@ -218,7 +298,7 @@ class HTTPModel:
                 response = self.client.post(
                     self.model.endpoint,
                     json=payload,
-                    headers={"Authorization": f"Bearer {self.key}"},
+                    headers=self.headers(),
                 )
                 if response.status_code == 429 or response.status_code >= 500:
                     retryable = True
@@ -230,12 +310,8 @@ class HTTPModel:
                         body = response.json()
                         if not isinstance(body, dict):
                             raise ValueError("Not an object")
-                        common = usage_fields(body)
-                        last = (
-                            parse_decisions(body, policy=policy)
-                            if self.model.adapter == "decisions"
-                            else parse_chat(body, self.curator, policy=policy)
-                        )
+                        common = self.response_fields(body)
+                        last = self.parse_response(body, policy)
                     except (ValueError, TypeError, KeyError, IndexError):
                         last = Prediction(status="error", error_code="schema_error", **common)
             except httpx.TransportError:
@@ -277,7 +353,115 @@ class HTTPModel:
         )
 
 
+class LayaModel(HTTPModel):
+    def __init__(
+        self,
+        config: Config,
+        model: ModelConfig,
+        ledger: Ledger,
+        run_key: str,
+        *,
+        curator: bool = False,
+        client=None,
+        sleep=time.sleep,
+    ):
+        if curator:
+            raise ValueError("Laya cannot supply policy reason codes for curation")
+        self.config, self.model = config, model
+        self.ledger, self.run_key = ledger, run_key
+        self.curator, self.sleep = curator, sleep
+        self.processing_location = model.processing_location
+        self.key = ""
+        if model.api_key_env:
+            self.key = os.getenv(model.api_key_env, "").strip()
+            if not self.key:
+                raise ValueError(f"Missing credential environment variable: {model.api_key_env}")
+        self.client = client or httpx.Client(
+            timeout=config.runner.timeout_seconds,
+            trust_env=self.processing_location != "local",
+        )
+        self.owns_client = client is None
+        try:
+            self.runtime_provenance = self._preflight()
+        except Exception:
+            if self.owns_client:
+                self.client.close()
+            raise
+
+    def headers(self) -> dict:
+        return {"Authorization": f"Bearer {self.key}"} if self.key else {}
+
+    def _preflight(self) -> dict:
+        try:
+            response = self.client.get(self.model.identity_endpoint, headers=self.headers())
+        except httpx.TransportError:
+            raise ValueError("Laya identity preflight failed") from None
+        if response.status_code != 200:
+            raise ValueError(f"Laya identity preflight returned HTTP {response.status_code}")
+        try:
+            body = response.json()
+        except ValueError:
+            raise ValueError("Laya identity preflight returned invalid JSON") from None
+        if not isinstance(body, dict) or body.get("status") != "ok":
+            raise ValueError("Laya identity preflight is not healthy")
+        loaded = body.get("loaded")
+        revisions = body.get("revisions")
+        if (
+            not isinstance(loaded, list)
+            or any(not isinstance(value, str) for value in loaded)
+            or self.model.model not in loaded
+            or not isinstance(revisions, dict)
+            or revisions.get(self.model.model) != self.model.expected_revision
+        ):
+            raise ValueError("Laya identity preflight model/revision mismatch")
+        checkpoint_devices = body.get("checkpoint_devices")
+        device = (
+            checkpoint_devices.get(self.model.model)
+            if isinstance(checkpoint_devices, dict)
+            else body.get("device")
+        )
+        if not isinstance(device, str) or not device:
+            raise ValueError("Laya identity preflight omitted the checkpoint device")
+        return {
+            "model": self.model.model,
+            "revision": self.model.expected_revision,
+            "device": device,
+        }
+
+    def payload(self, request: Request, policy: dict) -> dict:
+        return {
+            "model": self.model.model,
+            "state": request.model_dump(),
+            "questions": {
+                "triage": {
+                    "type": "choice",
+                    "instructions": policy["instructions"],
+                    "criteria": policy["criteria"],
+                }
+            },
+        }
+
+    def response_fields(self, body: dict) -> dict:
+        fields = usage_fields(body)
+        fields.pop("provider_cost_usd", None)
+        fields["returned_model"] = (
+            f"{self.runtime_provenance['model']}@{self.runtime_provenance['revision']}"
+        )
+        return fields
+
+    def parse_response(self, body: dict, policy: dict | None = None) -> Prediction:
+        return parse_laya(
+            body,
+            model=self.runtime_provenance["model"],
+            revision=self.runtime_provenance["revision"],
+            policy=policy,
+        )
+
+
 class ReplayModel:
+    processing_location = "local"
+    runtime_provenance = None
+
     def __init__(self, config: Config, model: ModelConfig):
         self.model = model
         self.records = read_json(config.path(model.replay_file))
@@ -309,4 +493,14 @@ def build_model(
         from .codex import CodexModel
 
         return CodexModel(config, model, ledger, run_key, curator=curator, sleep=sleep)
+    if model.adapter == "laya":
+        return LayaModel(
+            config,
+            model,
+            ledger,
+            run_key,
+            curator=curator,
+            client=client,
+            sleep=sleep,
+        )
     return HTTPModel(config, model, ledger, run_key, curator=curator, client=client, sleep=sleep)

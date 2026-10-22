@@ -8,10 +8,112 @@ models before the first inference attempt.
 
 `policy_file` selects the allowed decisions for every adapter. The default policy uses
 ALLOW/REVIEW/BLOCK; `policies/triage-binary-v0.1.json` opts into ALLOW/BLOCK with a best-fit
-choice even when context is limited. Jev receives two native choice criteria, and chat, Argo,
-and Codex receive a two-label output schema. Parsing checks the active policy as well as the
+choice even when context is limited. Jev and Laya receive two native choice criteria, and chat,
+Argo, and Codex receive a two-label output schema. Parsing checks the active policy as well as the
 response shape. Binary curators use only `legitimate_use` or `harm_facilitation`. Select new
 data/run directories when switching policies; see [binary evaluation](evaluation.md#binary-policy-option).
+
+## Laya local service
+
+The Laya adapter evaluates the upstream [`laya[serve]`](https://github.com/NandhaKishorM/laya)
+service as an independent local baseline. It is not a second stage after Jev, Codex, Argo, or a
+general-purpose LLM. `configs/laya-local.toml` selects Laya 0.4.13, the `english` model, and the
+reviewed checkpoint revision `55cf4c4ebb4ebe31b2550e8bdf3bd21b99753851`. Laya supplies typed
+triage decisions but not the enumerated reason codes required for the curation role.
+
+Install the service in a separate Python 3.12 environment. The CPU wheel path avoids depending on
+CUDA and keeps the model runtime outside ChemGraphSafe's locked application environment:
+
+```sh
+mkdir -p "$HOME/chemgraphsafe-runtimes/laya-0.4.13"
+cd "$HOME/chemgraphsafe-runtimes/laya-0.4.13"
+uv venv --python 3.12 .venv
+uv pip install --python .venv/bin/python --torch-backend=cpu 'laya[serve]==0.4.13'
+
+export LAYA_HOST=127.0.0.1
+export LAYA_PORT=18000
+export LAYA_DEVICE=cpu
+export LAYA_PRELOAD=1
+export LAYA_MODELS=english
+export LAYA_DEFAULT_MODEL=english
+export LAYA_MAX_LOADED=1
+export LAYA_THREADS=16
+export LAYA_AUTO_TASK=0
+export LAYA_JEV_STRICT=0
+export LAYA_REVISION=55cf4c4ebb4ebe31b2550e8bdf3bd21b99753851
+.venv/bin/laya-serve
+```
+
+The first start can download the checkpoint into the Hugging Face cache. After a successful online
+start, stop the service, set `HF_HUB_OFFLINE=1`, restart it, and repeat a harmless smoke request to
+prove the pinned checkpoint is available without network access. Do not claim cached-offline
+operation until that check succeeds.
+
+The config separates the two endpoint roles:
+
+- `endpoint="http://127.0.0.1:18000/v1/systemone"` receives a typed state containing only the
+  request text/context plus the `ALLOW`/`REVIEW`/`BLOCK` decision task.
+- `identity_endpoint="http://127.0.0.1:18000/health"` is called during preflight. It must report
+  healthy status, `english` as loaded, and `revisions.english` equal to `expected_revision`.
+- `model="english"` is pinned in every decision payload. Successful predictions record
+  `returned_model="english@<resolved-revision>"` and retain the complete native three-class
+  probability distribution. The response's `routing.model` must also match `english`; its generic
+  top-level decision-head name is not treated as checkpoint identity.
+
+Preflight completes before inference and before an attempt is reserved. Missing service state,
+an unloaded model, or a revision mismatch is therefore a configuration failure rather than a
+paid or measured model attempt. No minimum-confidence threshold is applied in the first baseline.
+Provider `abstained` is stored as ABSTAIN, distinct from policy REVIEW. An `unevaluated` gate is
+an operational error with code `abstention_unevaluated`; an unknown or internally inconsistent gate
+state is a schema error.
+
+Plain HTTP is accepted only when both endpoints use a numeric loopback hostname such as
+`127.0.0.1`; remote endpoints must use HTTPS. The example sends no authorization header. To use a
+separately secured compatible service, set `api_key_env` to the name of an exported environment
+variable; its value is sent as a bearer credential and is never written to artifacts. This only
+configures the client—the service must enforce that credential itself.
+
+Laya declares local processing only for validated numeric-loopback endpoints, so the runner may
+use examples whose rights records prohibit third-party hosted processing. This declaration does
+not override dataset download, redistribution, or other license terms. Keep the service bound to
+`127.0.0.1`, not `0.0.0.0`, and do not put raw dataset requests or service responses in Git.
+
+With the service running in one terminal, run from the ChemGraphSafe checkout:
+
+```sh
+uv run chemgraphsafe smoke --config configs/laya-local.toml
+uv run chemgraphsafe data prepare --config configs/laya-local.toml
+uv run chemgraphsafe data freeze --config configs/laya-local.toml
+uv run chemgraphsafe evaluate --config configs/laya-local.toml
+uv run chemgraphsafe report --run runs/laya-local-v1
+```
+
+The smoke command performs five real but owned harmless requests. The data workflow creates a
+distinct 100-case SciHazard freeze under `.local/data/laya-local-v1`; the report is written to
+`runs/laya-local-v1`. All attempts share the project ledger and count against its 500-attempt cap.
+`budget_mode="attempts_only"` means no estimated provider charge is recorded; it does not imply
+that local compute has zero resource cost.
+
+The reviewed Laya 0.4.13 service emits a startup warning that an out-of-range checkpoint
+temperature is clamped from approximately `0.10058` to `0.5` for the `choice:11+` head. This triage
+task has three options and uses the separate `choice:3-5` head, so that warning is not evidence that
+its scores were clamped. ChemGraphSafe still treats the native distribution as uncalibrated,
+retaining it and its provenance only for audit and future analysis. Any calibration report must
+validate that interpretation independently and fit transformations on development data only.
+
+### Fixed-order diagnostic limitation
+
+The initial `laya-local-v1` integration sends one choice question in the policy's fixed
+`ALLOW`, `REVIEW`, `BLOCK` order. Laya 0.4.13 documents sequential option-position bias and
+recommends evaluating balanced option rotations, mapping each distribution back to its labels, and
+averaging the aligned probabilities. A v1 result can therefore validate transport, identity,
+accounting, persistence, and response contracts, but it is not a fair comparative estimate of
+Laya's three-class performance.
+
+Keep v1 immutable as the naive diagnostic. A follow-up experiment should send the three cyclic
+orders in one request, validate every returned distribution, retain their provenance, average each
+label's probability, select the averaged argmax, and write to a fresh data/run identity. The
+derived average must not be mislabeled as a single native or calibrated probability distribution.
 
 ## Hosted Argo
 

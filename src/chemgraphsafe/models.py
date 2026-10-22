@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 Decision = Literal["ALLOW", "REVIEW", "BLOCK"]
 Status = Literal["ok", "abstain", "error"]
+ProcessingLocation = Literal["local", "hosted"]
 Reason = Literal["legitimate_use", "harm_facilitation", "insufficient_context", "operational_risk"]
 LABELS = ("ALLOW", "REVIEW", "BLOCK")
 BINARY_LABELS = ("ALLOW", "BLOCK")
@@ -144,6 +145,8 @@ class DatasetLoader(Protocol):
 
 
 class DecisionModel(Protocol):
+    processing_location: ProcessingLocation
+
     def predict(self, request: Request, policy: dict) -> Prediction: ...
 
 
