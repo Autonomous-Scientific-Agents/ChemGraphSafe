@@ -1,10 +1,10 @@
 # ChemGraphSafe
 
 An extensible research starter for evaluating chemistry **request triage**: ALLOW, REVIEW, or BLOCK.
-Adapters support **Jev through OpenRouter's Decisions API**, **hosted Argo**, **Codex with a
-ChatGPT login**, and configurable OpenAI-compatible chat endpoints. Argo and Codex can classify
-requests or generate provisional curation labels. Their contracts are tested offline; live
-measurements are a separate step.
+Adapters support **Jev through OpenRouter's Decisions API**, a **local Laya service**, **hosted
+Argo**, **Codex with a ChatGPT login**, and configurable OpenAI-compatible chat endpoints. Argo
+and Codex can classify requests or generate provisional curation labels. Their contracts are
+tested offline; live measurements are a separate step.
 
 **Project website:** <https://autonomous-scientific-agents.github.io/ChemGraphSafe/>
 
@@ -97,7 +97,7 @@ ABSTAIN and ERROR count as misses. It also shows harmful BLOCK recall, benign BL
 decision coverage, and a confusion table. Decided-only precision/F1/F2 remain in `metrics.json`
 with their denominator. Source-label agreement is not independently validated policy truth.
 
-Binary policies also work with Argo, Codex, generic chat, and offline replay adapters. Set
+Binary policies also work with Jev, Laya, Argo, Codex, generic chat, and offline replay adapters. Set
 `policy_file = "policies/triage-binary-v0.1.json"` in a configuration with new data/run directories;
 no separate mode flag is needed. See [evaluation and versioning](docs/evaluation.md).
 
@@ -128,6 +128,58 @@ provide a public category legend. Escalation is descriptive: always-REVIEW and a
 reach 100%. No benign false-positive rate or full
 three-class macro-F1 can be estimated. See the [source, policy, workflow, and reporting contract](docs/scisafetybench-loader.md).
 Existing SciHazard experiments remain unchanged.
+
+## Run Laya locally
+
+`configs/laya-local.toml` uses Laya 0.4.13 on CPU at numeric loopback only. The example pins the
+`english` checkpoint to revision `55cf4c4ebb4ebe31b2550e8bdf3bd21b99753851`; `/health` must
+confirm that exact loaded revision before any request or budget reservation. Install the service in
+a separate environment so its runtime dependencies do not change ChemGraphSafe's locked environment.
+On Windows, run these commands inside WSL 2 because the workflow lock requires POSIX `flock`:
+
+```sh
+mkdir -p "$HOME/chemgraphsafe-runtimes/laya-0.4.13"
+cd "$HOME/chemgraphsafe-runtimes/laya-0.4.13"
+uv venv --python 3.12 .venv
+uv pip install --python .venv/bin/python --torch-backend=cpu 'laya[serve]==0.4.13'
+
+export LAYA_HOST=127.0.0.1
+export LAYA_PORT=18000
+export LAYA_DEVICE=cpu
+export LAYA_PRELOAD=1
+export LAYA_MODELS=english
+export LAYA_DEFAULT_MODEL=english
+export LAYA_MAX_LOADED=1
+export LAYA_THREADS=16
+export LAYA_AUTO_TASK=0
+export LAYA_JEV_STRICT=0
+export LAYA_REVISION=55cf4c4ebb4ebe31b2550e8bdf3bd21b99753851
+.venv/bin/laya-serve
+```
+
+Keep that terminal open. In the ChemGraphSafe checkout, prepare an independent freeze and run the
+five owned smoke cases before evaluating the 100-case SciHazard pilot:
+
+```sh
+uv run chemgraphsafe smoke --config configs/laya-local.toml
+uv run chemgraphsafe data prepare --config configs/laya-local.toml
+uv run chemgraphsafe data freeze --config configs/laya-local.toml
+uv run chemgraphsafe evaluate --config configs/laya-local.toml
+uv run chemgraphsafe report --run runs/laya-local-v1
+```
+
+These commands perform real inference, but requests stay on the loopback service and the example
+uses attempts-only accounting with no provider-cost claim. The adapter preserves Laya's native
+three-class probabilities and reports its checkpoint identity, but does not claim those values are
+calibrated confidence. It does not feed another model's output into Laya. See
+[Laya local service](docs/llm-adapters.md#laya-local-service) for the endpoint, identity, abstention,
+authentication, and cached-offline contracts.
+
+The v1 example uses the policy's fixed `ALLOW`, `REVIEW`, `BLOCK` option order. Laya 0.4.13
+documents [option-position sensitivity](https://github.com/NandhaKishorM/laya/blob/v0.4.13/README.md#option-order)
+and recommends balanced rotations with label-aligned probability averaging. Treat this first run as
+an integration diagnostic, not a fair comparative performance estimate; implement rotations under a
+new run identity before model comparison.
 
 ## Use Argo or Codex
 

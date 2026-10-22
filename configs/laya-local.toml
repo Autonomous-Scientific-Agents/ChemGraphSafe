@@ -1,0 +1,33 @@
+project_root = ".."
+policy_file = "policies/triage-v0.1.json"
+run_dir = "runs/laya-local-v1"
+offline = false
+
+[data]
+loader = "scihazard"
+directory = ".local/data/laya-local-v1"
+revision = "f8809e5af23495e469dfc53e99973f74031fcb11"
+count = 100
+minimum_per_class = 40
+seed = 42
+similarity_threshold = 0.9
+
+[budget]
+ledger = ".local/state/pilot-budget.sqlite"
+max_usd = 10.0
+max_attempts = 500
+
+[runner]
+timeout_seconds = 60.0
+retries = 2
+max_retry_after_seconds = 60.0
+
+[[models]]
+name = "laya-english-local"
+adapter = "laya"
+model = "english"
+endpoint = "http://127.0.0.1:18000/v1/systemone"
+identity_endpoint = "http://127.0.0.1:18000/health"
+expected_revision = "55cf4c4ebb4ebe31b2550e8bdf3bd21b99753851"
+budget_mode = "attempts_only"
+max_input_bytes = 32000

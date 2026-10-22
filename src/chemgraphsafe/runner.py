@@ -9,7 +9,7 @@ from .config import Config
 from .data import annotations, ensure_unfrozen, examples, freeze, prepare, verify_freeze
 from .models import Annotation, Example, Prediction, PredictionRow, Request
 from .provenance import EXECUTION_VERSION, environment_identity
-from .rights import check_hosted_rights
+from .rights import check_hosted_rights, check_rights_evidence
 from .storage import code_hash, digest, file_hash, read_json, read_rows, write_json, write_rows
 
 FATAL_CODES = {
@@ -97,7 +97,9 @@ def curate(config: Config):
         raise ValueError("Prepared examples changed")
     rows = examples(config)
     if not config.offline:
-        check_hosted_rights(rows, config=config, models=[config.curator])
+        check_rights_evidence(rows)
+        if config.curator.processing_location == "hosted":
+            check_hosted_rights(rows, config=config, models=[config.curator])
     existing = annotations(config)
     for annotation in existing.values():
         annotation.prediction.validate_policy(config.policy)
@@ -113,8 +115,8 @@ def curate(config: Config):
     adapter = build_model(
         config, config.curator, ledger, "curation-" + prepared["examples_hash"], curator=True
     )
-    labeler = ModelLabeler(config, adapter)
     try:
+        labeler = ModelLabeler(config, adapter)
         for e in rows:
             if e.id in existing and existing[e.id].prediction.status != "error":
                 continue
@@ -135,7 +137,10 @@ def curate(config: Config):
 def _run_models(config: Config, rows: list[Example], split: dict, identity: dict, run_path):
     approval = None
     if not config.offline:
-        approval = check_hosted_rights(rows, config=config, models=config.models)
+        check_rights_evidence(rows)
+        hosted_models = [model for model in config.models if model.processing_location == "hosted"]
+        if hosted_models:
+            approval = check_hosted_rights(rows, config=config, models=hosted_models)
     ledger = ledger_for(config)
     # Preflight every model without inference before deriving the final execution identity.
     with ExitStack() as cleanup:
@@ -159,7 +164,9 @@ def _run_preflighted(config, rows, split, identity, run_path, ledger, adapters, 
         "code_hash": code_hash(),
         "environment": environment_identity(codex=any(m.adapter == "codex" for m in config.models)),
         "models": {
-            m.name: adapter.runtime_provenance for m, adapter in adapters if m.adapter == "codex"
+            m.name: getattr(adapter, "runtime_provenance", None)
+            for m, adapter in adapters
+            if getattr(adapter, "runtime_provenance", None) is not None
         },
     }
     if approval is not None:

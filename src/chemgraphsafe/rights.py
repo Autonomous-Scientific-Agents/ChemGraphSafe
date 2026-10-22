@@ -15,7 +15,7 @@ Nonempty = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)
 
 
 class HostedDestination(Record):
-    adapter: Literal["decisions", "chat", "argo", "codex"]
+    adapter: Literal["decisions", "chat", "argo", "codex", "laya"]
     model: Nonempty
     endpoint: str
 
@@ -27,6 +27,12 @@ class HostedApproval(Record):
     approved_on: date
     evidence: Nonempty
     destinations: list[HostedDestination] = Field(min_length=1)
+
+
+def check_rights_evidence(rows: list[Example]) -> None:
+    """Require a nonempty processing-rights record for every evaluated example."""
+    if any(not e.rights_evidence.strip() for e in rows):
+        raise ValueError("Rights evidence is required for every example")
 
 
 def check_hosted_rights(
