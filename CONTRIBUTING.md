@@ -7,6 +7,8 @@ Keep changes scoped to one loader, adapter, metric, or curation improvement.
 ## Extension points
 
 - `models.py`: `DatasetLoader`, `DecisionModel`, and `Labeler` protocols and validated records.
+  Task resolution selects the exact label set and question key; `Prediction.decision` supports
+  triage or SciSafetyBench risk categories and must always be validated against the active policy.
 - `data.py`: implement `load(config) -> list[Example]`, register the loader in
   `DATASET_LOADERS`, and extend `DataConfig.loader`. Include provenance and processing rights.
 - `adapters.py`: implement `predict(Request, policy) -> Prediction` and `close()`, register it

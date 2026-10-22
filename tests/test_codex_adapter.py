@@ -394,7 +394,10 @@ def test_real_sdk_notification_contract():
     assert common == {"input_tokens": 20, "output_tokens": 5}
 
 
-def test_real_sdk_serializes_trusted_policy_and_request_in_separate_fields(config, monkeypatch):
+@pytest.mark.parametrize("task", ["triage", "scisafetybench_risk_type"])
+def test_real_sdk_serializes_trusted_policy_and_request_in_separate_fields(
+    config, monkeypatch, task
+):
     sdk = pytest.importorskip("openai_codex")
     from openai_codex.generated import v2_all as types
 
@@ -403,8 +406,13 @@ def test_real_sdk_serializes_trusted_policy_and_request_in_separate_fields(confi
         classification_input,
         classification_instructions,
         classification_schema,
+        codex_base_instructions,
     )
 
+    if task != "triage":
+        config.task = task
+        config.data.protocol = "challenge_eval"
+        config.policy_file = "policies/scisafetybench-risk-type-v1.json"
     client = sdk.AsyncCodex()
     client._initialized = True  # No runtime is started; actual SDK serialization is exercised.
     captured = {}
@@ -466,6 +474,7 @@ def test_real_sdk_serializes_trusted_policy_and_request_in_separate_fields(confi
             cwd=cwd,
             instructions=instructions,
             config={"model_reasoning_effort": "medium"},
+            base_instructions=codex_base_instructions(config.policy),
         )
         assert metadata["reasoningEffort"] == "medium"
         await thread.turn(
@@ -479,6 +488,7 @@ def test_real_sdk_serializes_trusted_policy_and_request_in_separate_fields(confi
 
     asyncio.run(exercise())
     assert captured["thread/start"]["developerInstructions"] == instructions
+    assert captured["thread/start"]["baseInstructions"] == codex_base_instructions(config.policy)
     assert example.text not in captured["thread/start"]["baseInstructions"]
     turn = captured["turn/start"]
     assert turn["effort"] == "medium" and turn["outputSchema"] == schema

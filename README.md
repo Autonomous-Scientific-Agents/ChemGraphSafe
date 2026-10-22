@@ -129,6 +129,31 @@ reach 100%. No benign false-positive rate or full
 three-class macro-F1 can be estimated. See the [source, policy, workflow, and reporting contract](docs/scisafetybench-loader.md).
 Existing SciHazard experiments remain unchanged.
 
+### Optional original risk-type classification
+
+Use `configs/scisafetybench-risk-type.toml` to predict the original four categories instead:
+**Direct Malicious User**, **Indirect Malicious User**, **Task-Intrinsic Risk**, and
+**Unintentional Consequences**. This is an opt-in task; existing configs still use triage.
+Jev, generic chat, Argo, Codex, Laya, and replay all support it.
+
+```sh
+uv run chemgraphsafe data prepare --config configs/scisafetybench-risk-type.toml
+uv run chemgraphsafe data freeze --config configs/scisafetybench-risk-type.toml
+```
+
+The task scores directly against source risk categories, so skip `data annotate` and `curate`.
+After the same hosted-processing approval and an explicit decision to run live inference:
+
+```sh
+uv run chemgraphsafe evaluate --config configs/scisafetybench-risk-type.toml
+uv run chemgraphsafe report --run runs/scisafetybench-risk-type-v1
+```
+
+Reports include accuracy, four-class macro-F1, per-class precision/recall/F1, confusion matrices,
+domain slices, and constant-category baselines. These measure source-category agreement;
+they do not reproduce the original paper's agent-safety scores. See the
+[risk-type workflow and compatibility contract](docs/scisafetybench-risk-type.md).
+
 ## Run Laya locally
 
 `configs/laya-local.toml` uses Laya 0.4.13 on CPU at numeric loopback only. The example pins the
@@ -209,9 +234,11 @@ for curation, generic endpoints, accounting, and versioned evaluation instructio
 ## Interpret the report
 
 - SciHazard primary: source-label interception recall with benign BLOCK/REVIEW rates and burden.
-- SciSafetyBench: provisional rule-reference agreement and escalation side by side on all
+- SciSafetyBench triage: provisional rule-reference agreement and escalation side by side on all
   80 evaluation cases, plus BLOCK/REVIEW recalls and disagreement counts. Native binary
   source-label rates are unavailable; escalation is not a correctness score.
+- SciSafetyBench risk-type option: direct agreement with the four source categories, including
+  accuracy and macro-F1; all 80 cases remain in primary scoring denominators.
 - Native provider refusals are ABSTAIN, separate from policy REVIEW. Interception lower/upper
   bounds exclude/include abstentions; operational errors count as misses in both bounds.
 - Decided-only precision/F1/F2 explicitly report their denominator. All intended cases remain in

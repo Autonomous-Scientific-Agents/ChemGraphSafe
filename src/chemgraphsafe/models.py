@@ -1,11 +1,19 @@
 """Public extension contracts. Reference labels never enter Request."""
 
 import math
-from typing import Literal, Protocol
+from typing import Literal, Protocol, get_args
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 Decision = Literal["ALLOW", "REVIEW", "BLOCK"]
+Task = Literal["triage", "scisafetybench_risk_type"]
+RiskType = Literal[
+    "Direct Malicious User",
+    "Indirect Malicious User",
+    "Task-Intrinsic Risk",
+    "Unintentional Consequences",
+]
+RISK_TYPES = get_args(RiskType)
 Status = Literal["ok", "abstain", "error"]
 ProcessingLocation = Literal["local", "hosted"]
 Reason = Literal["legitimate_use", "harm_facilitation", "insufficient_context", "operational_risk"]
@@ -14,9 +22,38 @@ BINARY_LABELS = ("ALLOW", "BLOCK")
 PROTOCOL_VERSION = "triage-1"
 
 
+def policy_task(policy: dict | None = None) -> Task:
+    task = policy.get("task", "triage") if policy is not None else "triage"
+    if task not in get_args(Task):
+        raise ValueError("Unknown classification task")
+    return task
+
+
+def question_key(policy: dict | None = None) -> str:
+    return "risk_type" if policy_task(policy) == "scisafetybench_risk_type" else "triage"
+
+
+def task_protocol(task: Task) -> str:
+    return "scisafetybench-risk-type-1" if task == "scisafetybench_risk_type" else PROTOCOL_VERSION
+
+
+def risk_baselines() -> dict[str, str]:
+    return {"always-" + label.lower().replace(" ", "-"): label for label in RISK_TYPES}
+
+
 def policy_labels(policy: dict) -> tuple[str, ...]:
     """Return a supported label set in canonical order, independent of JSON key order."""
     criteria = policy.get("criteria")
+    if policy_task(policy) == "scisafetybench_risk_type":
+        if not isinstance(criteria, dict) or set(criteria) != set(RISK_TYPES):
+            raise ValueError(
+                "Risk-type policy must define exactly the four SciSafetyBench categories"
+            )
+        if any(not isinstance(value, str) or not value.strip() for value in criteria.values()):
+            raise ValueError("Risk-type criteria require nonempty definitions")
+        if not isinstance(policy.get("instructions"), str) or not policy["instructions"].strip():
+            raise ValueError("Risk-type policy requires classification instructions")
+        return RISK_TYPES
     if not isinstance(criteria, dict) or set(criteria) not in (set(LABELS), set(BINARY_LABELS)):
         raise ValueError("Policy must define ALLOW/BLOCK or ALLOW/REVIEW/BLOCK")
     return tuple(label for label in LABELS if label in criteria)
@@ -52,7 +89,7 @@ class Example(Record):
 
 class Prediction(Record):
     status: Status
-    decision: Decision | None = None
+    decision: Decision | RiskType | None = None
     probabilities: dict[str, float] | None = None
     probability_origin: Literal["native", "mock"] | None = None
     choice_argmax_mismatch: bool = False
@@ -75,10 +112,10 @@ class Prediction(Record):
             p = self.probabilities
             if (
                 self.status != "ok"
-                or set(p) not in (set(LABELS), set(BINARY_LABELS))
+                or set(p) not in (set(LABELS), set(BINARY_LABELS), set(RISK_TYPES))
                 or self.decision not in p
             ):
-                raise ValueError("A distribution requires a matching two- or three-class decision")
+                raise ValueError("A distribution requires a matching supported decision label set")
             if any(not math.isfinite(v) or not 0 <= v <= 1 for v in p.values()):
                 raise ValueError("Invalid probability")
             if abs(sum(p.values()) - 1) > 1e-3:

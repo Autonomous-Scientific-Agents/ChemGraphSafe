@@ -11,9 +11,9 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
 from .config import Config
-from .models import PROTOCOL_VERSION, Annotation, Example, Request, RuleAnnotation, parse_annotation
+from .models import Annotation, Example, Request, RuleAnnotation, parse_annotation, task_protocol
 from .scisafetybench import SOURCE_FILES as SCISAFETYBENCH_FILES
-from .scisafetybench import SciSafetyBenchLoader, rule_annotation
+from .scisafetybench import SciSafetyBenchLoader, rule_annotation, validate_risk_references
 from .storage import code_hash, digest, file_hash, read_json, read_rows, write_json, write_rows
 
 SOURCE_REPO = "AI45Lab/DeepSafe-Sci"
@@ -240,6 +240,9 @@ def verify_preparation(config: Config) -> dict:
 
 
 def prepare(config: Config):
+    if config.task == "scisafetybench_risk_type":
+        _ = config.policy
+        reject_risk_annotations(config)
     ensure_unfrozen(config)
     manifest_path = config.dataset / "prepare.json"
     spec = preparation_spec(config)
@@ -314,6 +317,8 @@ def annotations(config: Config) -> dict[str, Annotation | RuleAnnotation]:
 
 def annotate(config: Config):
     """Deterministic, offline-only reference generation; never invokes a provider."""
+    if config.task == "scisafetybench_risk_type":
+        raise ValueError("Risk-type classification uses source labels; skip data annotate")
     ensure_unfrozen(config)
     if not config.annotation_rule or config.curator:
         raise ValueError("Configure an annotation_rule without a curator")
@@ -334,12 +339,24 @@ def annotate(config: Config):
     }
 
 
+def reject_risk_annotations(config: Config):
+    if (
+        config.task == "scisafetybench_risk_type"
+        and (config.dataset / "annotations.jsonl").exists()
+    ):
+        raise ValueError("Risk-type classification cannot use an annotations file")
+
+
 def freeze(config: Config):
     ensure_unfrozen(config)
+    _ = config.policy
+    reject_risk_annotations(config)
     prepared = verify_preparation(config)
     rows = examples(config)
     if not rows:
         raise ValueError("No prepared examples")
+    if config.task == "scisafetybench_risk_type":
+        validate_risk_references(config, rows)
     ann = annotations(config)
     for annotation in ann.values():
         annotation.prediction.validate_policy(config.policy)
@@ -410,7 +427,7 @@ def freeze(config: Config):
         "split_hash": digest(split_manifest),
         "semantic_config": config.semantic_config(),
         "semantic_hash": config.semantic_hash(),
-        "protocol": PROTOCOL_VERSION,
+        "protocol": task_protocol(config.task),
         "code_provenance": code_hash(),
         "annotation_count": len(ann),
         "mock": config.offline,
@@ -432,7 +449,10 @@ def verify_freeze(config: Config):
     ann = config.dataset / "annotations.jsonl"
     if (file_hash(ann) if ann.exists() else None) != result["annotations_hash"]:
         raise ValueError("Frozen annotations changed (including previously absent annotations)")
-    if result["semantic_hash"] != config.semantic_hash() or result["protocol"] != PROTOCOL_VERSION:
+    if result["semantic_hash"] != config.semantic_hash() or result["protocol"] != task_protocol(
+        config.task
+    ):
         raise ValueError("Frozen policy/model/protocol changed; create a new version")
+    reject_risk_annotations(config)
     verify_preparation(config)
     return result
