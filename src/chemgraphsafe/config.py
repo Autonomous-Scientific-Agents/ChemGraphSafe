@@ -80,6 +80,12 @@ class ModelConfig(Record):
             raise ValueError("Model name is reserved for a diagnostic baseline")
         if self.adapter == "kev":
             u = urlsplit(self.endpoint)
+            try:
+                port = u.port
+            except ValueError:
+                raise ValueError("Kev requires a valid loopback endpoint port") from None
+            if port is not None and port < 1:
+                raise ValueError("Kev requires a valid loopback endpoint port")
             if (
                 u.scheme != "http"
                 or u.hostname not in {"127.0.0.1", "::1"}

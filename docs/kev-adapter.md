@@ -52,6 +52,7 @@ The configured runtime revision is an operator declaration recorded in run ident
 Use `configs/kev-local.toml`.
 The endpoint must use `127.0.0.1` or `::1` with `/v1/systemone`.
 Hostname aliases, non-loopback addresses, embedded credentials, query parameters, and fragments are rejected.
+Explicit ports must be valid integers from 1 to 65535.
 Other HTTP providers retain their HTTPS and credential requirements.
 Environment proxy settings are disabled for the local client.
 
@@ -78,12 +79,22 @@ Kev cannot serve as a curator because it does not provide the required curation 
 Construction checks `/v1/models` without inference or attempt reservation.
 Before each attempt, the adapter checks checkpoint, base model name, device, dtype, backend,
 head temperature, and disabled state truncation.
-Identity drift stops further requests through the runner's fatal-error handling.
+Confirmed identity drift produces `local_identity_changed` and stops further requests.
+Transport failures, HTTP errors, and incomplete metadata produce `local_unavailable` during per-attempt checks.
+The shared retry loop retries unavailable checks within `runner.retries` and the configured delay limit.
+An exhausted unavailable check affects that case; it does not mark later cases as identity changes.
+Metadata GET requests consume retry slots, but they do not reserve or consume inference attempts.
+No inference POST is sent until metadata matches the pinned identity.
+Construction still requires a successful initial metadata check before the run starts.
 The model field in a prediction records the checkpoint verified by preflight, not the response's echoed alias.
 
 Successful decisions require a complete numeric distribution matching the active policy.
 The default policy has ALLOW/REVIEW/BLOCK labels. The opt-in binary policy has ALLOW/BLOCK labels.
-Changing policy requires a new data version and freeze; an existing three-way run cannot become binary.
+The native SciSafetyBench risk-type task uses its four category labels through `questions.risk_type`.
+Criteria always follow `policy_labels()` order for Kev and the shared Decisions adapter.
+Reordering JSON keys alone does not change request bytes or mix option orders during resume.
+Changing policy contents requires a new data version and freeze; three-way runs cannot become binary.
+The corrected inference code requires a new run directory for existing experiments.
 Malformed answers and explicit truncation become errors. An optional boolean abstention remains separate from REVIEW.
 Client latency and attempts use the shared HTTP transport.
 Valid native input-token counts are retained.

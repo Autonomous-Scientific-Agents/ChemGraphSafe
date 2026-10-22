@@ -196,6 +196,7 @@ def parse_classification(
 class HTTPModel:
     processing_location = "hosted"
     credential_required = True
+    retryable_preflight_errors = frozenset()
 
     def __init__(
         self,
@@ -260,9 +261,7 @@ class HTTPModel:
                         "instructions": policy["instructions"],
                         "criteria": {
                             label: policy["criteria"][label] for label in policy_labels(policy)
-                        }
-                        if question_key(policy) == "risk_type"
-                        else policy["criteria"],
+                        },
                     }
                 },
             }
@@ -330,9 +329,24 @@ class HTTPModel:
         has_provider_cost = False
         last = Prediction(status="error", error_code="not_attempted")
         for attempt in range(self.config.runner.retries + 1):
+            preflight_started = time.perf_counter()
             failure = self.preflight_attempt()
             if failure is not None:
                 last = failure
+                if (
+                    failure.error_code in self.retryable_preflight_errors
+                    and attempt < self.config.runner.retries
+                ):
+                    delay = self._delay(None, attempt)
+                    if (
+                        not math.isfinite(delay)
+                        or delay > self.config.runner.max_retry_after_seconds
+                    ):
+                        last = Prediction(status="error", error_code="rate_limit_deferred")
+                        break
+                    overhead += (time.perf_counter() - preflight_started) * 1000 + delay * 1000
+                    self.sleep(delay)
+                    continue
                 break
             try:
                 reservation = self.ledger.reserve(

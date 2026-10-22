@@ -8,9 +8,18 @@ from .adapters import HTTPModel, parse_decisions, usage_fields
 from .models import Prediction, question_key
 
 
+class KevUnavailable(ValueError):
+    """Metadata could not establish the loaded identity; no inference is allowed."""
+
+
+class KevIdentityChanged(ValueError):
+    """Valid metadata reports a different checkpoint or serving setting."""
+
+
 class KevModel(HTTPModel):
     credential_required = False
     processing_location = "local"
+    retryable_preflight_errors = frozenset({"local_unavailable"})
 
     def __init__(self, config, model, ledger, run_key, **kwargs):
         if kwargs.get("curator"):
@@ -33,23 +42,23 @@ class KevModel(HTTPModel):
     def server_metadata(self):
         endpoint = str(httpx.URL(self.model.endpoint).copy_with(path="/v1/models"))
         try:
-            response = self.client.get(
-                endpoint,
-                headers={"Authorization": f"Bearer {self.key}"} if self.key else {},
-                follow_redirects=False,
-            )
+            response = self.client.get(endpoint, headers=self.headers(), follow_redirects=False)
             response.raise_for_status()
             body = response.json()
-            if not isinstance(body, dict):
-                raise ValueError("Expected server metadata object")
+        except (httpx.HTTPError, ValueError) as exc:
+            raise KevUnavailable("Kev server identity preflight unavailable") from exc
+        try:
             return self.kev_metadata(body)
-        except (httpx.HTTPError, ValueError, TypeError, KeyError, IndexError) as exc:
-            raise ValueError("Kev server identity preflight failed") from exc
+        except KevUnavailable:
+            raise
+        except ValueError as exc:
+            raise KevIdentityChanged("Kev server identity preflight failed") from exc
 
     def kev_metadata(self, body):
-        card = body["models"][0]
-        if not isinstance(card, dict):
-            raise ValueError("Expected Kev model card")
+        cards = body.get("models") if isinstance(body, dict) else None
+        if not isinstance(cards, list) or not cards or not isinstance(cards[0], dict):
+            raise KevUnavailable("Kev identity preflight metadata is incomplete")
+        card = cards[0]
         expected = {
             "run": f"{self.model.model}@{self.settings.revision}",
             "base": self.settings.base_model,
@@ -58,22 +67,30 @@ class KevModel(HTTPModel):
             "backend": "torch",
             "truncate_states": False,
         }
-        if any(type(card.get(k)) is not type(v) or card[k] != v for k, v in expected.items()):
-            raise ValueError("Kev checkpoint/device/settings mismatch")
+        if any(type(card.get(k)) is not type(v) for k, v in expected.items()):
+            raise KevUnavailable("Kev identity preflight metadata is malformed")
         temperature = card.get("temperature")
         if (
             isinstance(temperature, bool)
             or not isinstance(temperature, (int, float))
-            or not math.isclose(temperature, self.settings.calibration_temperature, rel_tol=1e-9)
+            or not math.isfinite(temperature)
+            or temperature <= 0
         ):
+            raise KevUnavailable("Kev identity preflight temperature is malformed")
+        if any(card[k] != v for k, v in expected.items()):
+            raise ValueError("Kev checkpoint/device/settings mismatch")
+        if not math.isclose(temperature, self.settings.calibration_temperature, rel_tol=1e-9):
             raise ValueError("Kev calibration temperature mismatch")
         return {**expected, "temperature": temperature}
 
     def preflight_attempt(self):
         try:
-            if self.server_metadata() != self.observed:
-                raise ValueError("Local metadata changed")
-        except ValueError:
+            observed = self.server_metadata()
+        except KevUnavailable:
+            return Prediction(status="error", error_code="local_unavailable")
+        except KevIdentityChanged:
+            return Prediction(status="error", error_code="local_identity_changed")
+        if observed != self.observed:
             return Prediction(status="error", error_code="local_identity_changed")
 
     def headers(self):

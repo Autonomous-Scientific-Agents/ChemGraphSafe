@@ -210,7 +210,9 @@ def test_local_settings_affect_semantic_identity(config):
         changed = config.models[0].model_copy(deep=True)
         setattr(changed.local, key, value)
         assert digest(changed.spec()) != digest(config.models[0].spec())
-    assert config.semantic_hash() == initial
+        changed_config = config.model_copy(deep=True)
+        changed_config.models = [changed]
+        assert changed_config.semantic_hash() != initial
 
 
 @pytest.mark.parametrize(
@@ -444,3 +446,233 @@ def test_kev_distribution_must_match_active_policy(config, binary, probabilities
     assert result.status == status and result.attempts == 1
     if status == "error":
         assert result.decision is None and result.error_code == "schema_error"
+
+
+@pytest.mark.parametrize("failure", ["timeout", "reset", "http500", "json", "empty", "missing"])
+def test_post_timeout_and_transient_preflight_recover(config, failure):
+    config.runner.retries = 2
+    calls, delays = [], []
+    posts = 0
+
+    def handle(request):
+        nonlocal posts
+        calls.append(request.method)
+        if request.method == "POST":
+            posts += 1
+            if posts == 1:
+                raise httpx.ReadTimeout("Owned POST timeout", request=request)
+            return httpx.Response(200, json=reply())
+        if len(calls) == 4:
+            if failure == "timeout":
+                raise httpx.ReadTimeout("Owned metadata timeout", request=request)
+            if failure == "reset":
+                raise httpx.ReadError("Owned connection reset", request=request)
+            if failure == "http500":
+                return httpx.Response(503)
+            if failure == "json":
+                return httpx.Response(200, content=b"not JSON")
+            if failure == "empty":
+                return httpx.Response(200, json={"models": []})
+            body = metadata()
+            body["models"][0].pop("run")
+            return httpx.Response(200, json=body)
+        return httpx.Response(200, json=metadata())
+
+    ledger = Ledger(config.root / "ledger", 1, 10)
+    with httpx.Client(transport=httpx.MockTransport(handle)) as client:
+        instance = adapters.build_model(
+            config, kev_model(), ledger, client=client, sleep=delays.append
+        )
+        result = instance.predict(Request(text="Define an atom."), config.policy)
+    assert result.status == "ok" and result.attempts == 2
+    assert calls == ["GET", "GET", "POST", "GET", "GET", "POST"]
+    assert delays == [1, 2] and ledger.summary()["attempts"] == 2
+    assert "local_unavailable" not in runner.FATAL_CODES
+
+
+def test_unavailable_preflight_retries_are_bounded_and_unmetered(config):
+    config.runner.retries = 2
+    gets, delays = [], []
+
+    def handle(request):
+        assert request.method == "GET"
+        gets.append(True)
+        if len(gets) == 1:
+            return httpx.Response(200, json=metadata())
+        raise httpx.ReadTimeout("Owned metadata outage", request=request)
+
+    ledger = Ledger(config.root / "ledger", 1, 10)
+    with httpx.Client(transport=httpx.MockTransport(handle)) as client:
+        instance = adapters.build_model(
+            config, kev_model(), ledger, client=client, sleep=delays.append
+        )
+        result = instance.predict(Request(text="Define an atom."), config.policy)
+    assert len(gets) == 4 and delays == [1, 2]
+    assert result.error_code == "local_unavailable" and result.attempts == 0
+    assert ledger.summary()["attempts"] == 0
+
+
+def test_metadata_retry_delay_honors_configured_limit(config):
+    config.runner.retries = 2
+    config.runner.max_retry_after_seconds = 0
+    gets = []
+
+    def handle(request):
+        assert request.method == "GET"
+        gets.append(True)
+        if len(gets) == 1:
+            return httpx.Response(200, json=metadata())
+        return httpx.Response(503)
+
+    ledger = Ledger(config.root / "ledger", 1, 10)
+    with httpx.Client(transport=httpx.MockTransport(handle)) as client:
+        instance = adapters.build_model(
+            config,
+            kev_model(),
+            ledger,
+            client=client,
+            sleep=lambda _: pytest.fail("Delay exceeds configured limit"),
+        )
+        result = instance.predict(Request(text="Define an atom."), config.policy)
+    assert result.error_code == "rate_limit_deferred" and result.attempts == 0
+    assert len(gets) == 2 and ledger.summary()["attempts"] == 0
+
+
+def test_metadata_outage_does_not_abort_remaining_cases(config, monkeypatch):
+    config.offline = False
+    config.models = [kev_model()]
+    config.runner.retries = 0
+    data.prepare(config)
+    data.freeze(config)
+    original = httpx.Client
+    gets = []
+
+    def handle(request):
+        if request.method == "GET":
+            gets.append(True)
+            if len(gets) == 2:
+                raise httpx.ReadTimeout("Owned first-case metadata outage", request=request)
+        return httpx.Response(200, json=metadata() if request.method == "GET" else reply())
+
+    monkeypatch.setattr(
+        adapters.httpx, "Client", lambda **kw: original(**kw, transport=httpx.MockTransport(handle))
+    )
+    assert not runner.evaluate(config)["complete"]
+    saved = read_rows(config.run / "predictions.jsonl")
+    assert len(saved) == 10
+    assert saved[0]["prediction"]["error_code"] == "local_unavailable"
+    assert saved[0]["prediction"]["attempts"] == 0
+    assert all(row["prediction"]["status"] == "ok" for row in saved[1:])
+    assert runner.ledger_for(config).summary()["attempts"] == 9
+
+
+@pytest.mark.parametrize("port", ["99999", "bad", "-1", "0"])
+def test_kev_rejects_invalid_port_before_client_creation(port):
+    with pytest.raises(ValueError, match="loopback.*port"):
+        kev_model(endpoint=f"http://127.0.0.1:{port}/v1/systemone")
+
+
+@pytest.mark.parametrize("adapter", ["kev", "decisions"])
+@pytest.mark.parametrize(
+    "policy_name",
+    [
+        "triage-v0.1.json",
+        "triage-binary-v0.1.json",
+        "scisafetybench-risk-type-v1.json",
+    ],
+)
+def test_reversed_criteria_send_identical_wire_bytes(config, monkeypatch, adapter, policy_name):
+    from chemgraphsafe.models import policy_labels, question_key
+
+    config.policy_file = "policies/" + policy_name
+    if policy_name == "scisafetybench-risk-type-v1.json":
+        config.task = "scisafetybench_risk_type"
+        config.data.protocol = "challenge_eval"
+    policy = config.policy
+    reversed_policy = {**policy, "criteria": dict(reversed(list(policy["criteria"].items())))}
+    monkeypatch.setenv("OWNED_TEST_KEY", "owned-test-key")
+    model = (
+        kev_model()
+        if adapter == "kev"
+        else ModelConfig(
+            name="decisions",
+            adapter="decisions",
+            model="owned-test-model",
+            endpoint="https://example.test/decide",
+            api_key_env="OWNED_TEST_KEY",
+            budget_mode="attempts_only",
+        )
+    )
+    labels = policy_labels(policy)
+    key = question_key(policy)
+    body = {
+        "answers": {
+            key: {
+                "type": "choice",
+                "choice": labels[0],
+                "probabilities": {label: 1 / len(labels) for label in labels},
+            }
+        }
+    }
+    posts = []
+
+    def handle(request):
+        if request.method == "GET":
+            return httpx.Response(200, json=metadata())
+        posts.append(request.content)
+        assert tuple(json.loads(request.content)["questions"][key]["criteria"]) == labels
+        return httpx.Response(200, json=body)
+
+    ledger = Ledger(config.root / "ledger", 1, 10)
+    with httpx.Client(transport=httpx.MockTransport(handle)) as client:
+        instance = adapters.build_model(config, model, ledger, client=client)
+        for selected in (policy, reversed_policy):
+            result = instance.predict(Request(text="Define an atom."), selected)
+            assert result.status == "ok" and set(result.probabilities) == set(labels)
+    assert len(posts) == 2 and posts[0] == posts[1]
+    assert digest(policy) == digest(reversed_policy)
+
+
+def test_interrupted_resume_after_policy_reordering_preserves_inputs(config, monkeypatch):
+    config.offline = False
+    config.models = [kev_model()]
+    config.runner.retries = 0
+    config.run_dir = "runs/order-reference"
+    data.prepare(config)
+    data.freeze(config)
+    original = httpx.Client
+    posts = []
+    interrupt = False
+
+    def handle(request):
+        nonlocal interrupt
+        if request.method == "GET":
+            if interrupt and len(posts) == 1:
+                interrupt = False
+                raise KeyboardInterrupt("Owned interruption before the second inference")
+            return httpx.Response(200, json=metadata())
+        posts.append(request.content)
+        return httpx.Response(200, json=reply())
+
+    monkeypatch.setattr(
+        adapters.httpx, "Client", lambda **kw: original(**kw, transport=httpx.MockTransport(handle))
+    )
+    assert runner.evaluate(config)["complete"]
+    reference = posts.copy()
+    posts.clear()
+    config.run_dir = "runs/order-interrupted"
+    interrupt = True
+    with pytest.raises(KeyboardInterrupt):
+        runner.evaluate(config)
+    saved = read_rows(config.run / "predictions.jsonl")
+    assert len(saved) == 1
+    run_key = read_json(config.run / "manifest.json")["run_key"]
+    initial_hash = config.semantic_hash()
+    policy = config.policy
+    policy["criteria"] = dict(reversed(list(policy["criteria"].items())))
+    config.path(config.policy_file).write_text(json.dumps(policy))
+    assert config.semantic_hash() == initial_hash
+    assert runner.evaluate(config)["complete"]
+    assert posts == reference and len(posts) == 10
+    assert read_json(config.run / "manifest.json")["run_key"] == run_key
+    assert read_rows(config.run / "predictions.jsonl")[0] == saved[0]
