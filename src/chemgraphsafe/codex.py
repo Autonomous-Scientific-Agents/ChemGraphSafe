@@ -80,6 +80,7 @@ class ConfigurationError(ValueError):
 
 
 def load_sdk():
+    """Lazy-import the optional openai-codex package, giving a clear install instruction on miss."""
     try:
         return importlib.import_module("openai_codex")
     except ImportError:
@@ -87,10 +88,12 @@ def load_sdk():
 
 
 def plain(value):
+    """Unwrap a Pydantic model to a plain dict, or return the value as-is if it is already plain."""
     return value.model_dump(mode="json", by_alias=True) if hasattr(value, "model_dump") else value
 
 
 def require_chatgpt(response):
+    """Raise AuthenticationError if the Codex account is not a ChatGPT-managed subscription."""
     value = plain(response)
     account = plain(value.get("account")) if isinstance(value, dict) else None
     if not isinstance(account, dict) or account.get("type") != "chatgpt":
@@ -121,6 +124,7 @@ def error_code(error):
 
 
 def token_fields(usage):
+    """Extract input/output token counts from a Codex tokenUsage payload."""
     total = usage.get("total", {}) if isinstance(usage, dict) else {}
     if not isinstance(total, dict):
         return {}
@@ -237,6 +241,13 @@ async def consume(turn, common):
 
 
 class CodexModel:
+    """Adapter for OpenAI Codex SDK inference via a stored ChatGPT subscription.
+
+    All Codex features unrelated to text classification (shell, browser, tools, plugins, etc.)
+    are explicitly disabled via ``DISABLED_FEATURES``. Any tool event in the stream is treated
+    as a fatal error rather than silently skipped, preventing unintended side effects.
+    """
+
     def __init__(self, config, model, ledger, run_key, *, curator=False, sleep=time.sleep):
         self.config, self.model = config, model
         self.ledger, self.run_key = ledger, run_key

@@ -13,15 +13,29 @@ PROTOCOL_VERSION = "triage-1"
 
 
 class Record(BaseModel):
+    """Base for all data records. Rejects extra fields and non-finite floats."""
+
     model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
 
 
 class Request(Record):
+    """The only thing a model ever sees — request text plus optional context string.
+
+    Source IDs, labels, and annotations are deliberately excluded to prevent leakage.
+    """
+
     text: str = Field(min_length=1)
     context: str = ""
 
 
 class Example(Record):
+    """A fully-provenance-tracked dataset entry, produced by a DatasetLoader.
+
+    The ``id`` is a stable, source-qualified hash. ``group`` links near-duplicate
+    requests so they land in the same train/eval split. Rights fields gate whether
+    the example may be sent to a hosted model.
+    """
+
     id: str
     request: Request
     source: str
@@ -41,6 +55,13 @@ class Example(Record):
 
 
 class Prediction(Record):
+    """Everything a model returns for one request, including cost, timing, and error details.
+
+    If ``probabilities`` is present, all three ALLOW/REVIEW/BLOCK classes must sum to 1 ± 1e-3.
+    The provider's explicit ``decision`` is authoritative even when it differs from argmax;
+    that inconsistency is recorded in ``choice_argmax_mismatch`` rather than silently fixed.
+    """
+
     status: Status
     decision: Decision | None = None
     probabilities: dict[str, float] | None = None
@@ -76,6 +97,13 @@ class Prediction(Record):
 
 
 class Annotation(Record):
+    """An LLM-generated provisional policy label for one Example.
+
+    ``policy_hash`` and ``config_hash`` tie the annotation to the exact policy JSON
+    and curator configuration used. Annotations are stored separately from examples
+    so the dataset can be frozen with or without them.
+    """
+
     example_id: str
     policy_hash: str
     config_hash: str
@@ -86,6 +114,8 @@ class Annotation(Record):
 
 
 class PredictionRow(Record):
+    """One model's prediction for one example, keyed to a specific run for resume support."""
+
     example_id: str
     model_name: str
     split: Literal["dev", "eval", "smoke"]
@@ -93,13 +123,23 @@ class PredictionRow(Record):
     prediction: Prediction
 
 
+# ── Extension protocols ────────────────────────────────────────────────────────
+# Register implementations in DATASET_LOADERS (data.py) and build_model (adapters.py).
+
+
 class DatasetLoader(Protocol):
+    """Loads and normalizes examples from one source into the shared Example schema."""
+
     def load(self, config) -> list[Example]: ...
 
 
 class DecisionModel(Protocol):
+    """Classifies a single Request as ALLOW, REVIEW, or BLOCK under the given policy."""
+
     def predict(self, request: Request, policy: dict) -> Prediction: ...
 
 
 class Labeler(Protocol):
+    """Generates a provisional Annotation for an Example using a configured LLM curator."""
+
     def annotate(self, example: Example, policy: dict) -> Annotation: ...

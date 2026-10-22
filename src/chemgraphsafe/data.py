@@ -12,7 +12,15 @@ from sklearn.metrics.pairwise import cosine_similarity
 
 from .config import Config
 from .models import PROTOCOL_VERSION, Annotation, Example, Request
-from .storage import code_hash, digest, file_hash, read_json, read_rows, write_json, write_rows
+from .storage import (
+    code_hash,
+    digest,
+    file_hash,
+    read_json,
+    read_rows,
+    write_json,
+    write_rows,
+)
 
 SOURCE_REPO = "AI45Lab/DeepSafe-Sci"
 SOURCE_LICENSE = "https://github.com/AI45Lab/DeepSafe-Sci/blob/main/LICENSE-DATA"
@@ -29,10 +37,18 @@ SOURCE_FILES = {
 
 
 def normalized(text: str) -> str:
+    """NFC-normalize and collapse whitespace — used for exact-duplicate detection."""
     return " ".join(unicodedata.normalize("NFC", text).split())
 
 
 class SciHazardLoader:
+    """Downloads and validates the SciHazard Chemistry subset from AI45Lab/DeepSafe-Sci.
+
+    Verifies SHA-256 checksums before and after caching, rejects rows with conflicting
+    ``is_harmful`` flags, and strips all source response/reasoning fields from the
+    returned Examples so they can never reach a model input.
+    """
+
     def load(self, config: Config) -> list[Example]:
         revision = config.data.revision
         if not re.fullmatch(r"[0-9a-f]{40}", revision):
@@ -81,7 +97,7 @@ class SciHazardLoader:
                         source_label=label,
                         source_native_harmful=native,
                         category=str(row.get("category", "unspecified")),
-                        family=str(row["variant_of"]) if row.get("variant_of") else None,
+                        family=(str(row["variant_of"]) if row.get("variant_of") else None),
                         license="CC-BY-4.0",
                         hosted_processing_allowed=True,
                         rights_evidence=SOURCE_LICENSE,
@@ -91,6 +107,8 @@ class SciHazardLoader:
 
 
 class FixtureLoader:
+    """Loads pre-validated examples from a local JSONL file (used for offline/CI runs)."""
+
     def load(self, config: Config) -> list[Example]:
         return [Example.model_validate(r) for r in read_rows(config.path(config.data.fixture))]
 
@@ -99,6 +117,13 @@ DATASET_LOADERS = {"scihazard": SciHazardLoader, "fixture": FixtureLoader}
 
 
 def deduplicate_and_group(examples: list[Example], threshold: float):
+    """Remove exact text duplicates and build near-duplicate groups via TF-IDF cosine similarity.
+
+    Exact duplicates with conflicting source labels go to quarantine rather than being silently
+    relabeled. Character n-gram (3–5) TF-IDF cosine pairs above ``threshold`` and explicit
+    upstream ``variant_of`` relationships are unioned into connected groups using path compression.
+    Returns ``(unique_examples, stats_dict)``.
+    """
     if len({e.id for e in examples}) != len(examples):
         raise ValueError("Duplicate source IDs")
     buckets = defaultdict(list)
@@ -173,6 +198,13 @@ def deduplicate_and_group(examples: list[Example], threshold: float):
 
 
 def select_pilot(pool: list[Example], count: int, minimum: int, seed: int) -> list[Example]:
+    """Sample one representative per group to form a balanced pilot set.
+
+    First fills up to ``count // 2`` slots with benign representatives, then fills
+    remaining slots from harmful groups. Raises ``ValueError`` if either class falls
+    below ``minimum`` — this enforces the feasibility gate rather than silently
+    returning an imbalanced set.
+    """
     rng = random.Random(seed)
     groups = defaultdict(list)
     for e in pool:
@@ -191,7 +223,8 @@ def select_pilot(pool: list[Example], count: int, minimum: int, seed: int) -> li
         if group in used or len(selected) >= count:
             continue
         candidates = sorted(
-            (e for e in groups[group] if e.source_label == "harmful"), key=lambda e: e.id
+            (e for e in groups[group] if e.source_label == "harmful"),
+            key=lambda e: e.id,
         )
         if candidates:
             selected.append(rng.choice(candidates))
@@ -206,11 +239,18 @@ def select_pilot(pool: list[Example], count: int, minimum: int, seed: int) -> li
 
 
 def ensure_unfrozen(config: Config):
+    """Raise if the dataset directory already has a freeze.json — immutability guard."""
     if (config.dataset / "freeze.json").exists():
         raise ValueError("Dataset is frozen; use an explicit new dataset version")
 
 
 def prepare(config: Config):
+    """Download, deduplicate, group, and sample the pilot dataset.
+
+    Idempotent: a second call with the same config is a no-op as long as the
+    preparation hash and file contents match. Any config change raises an error
+    and requires a new ``data.directory``.
+    """
     ensure_unfrozen(config)
     manifest_path = config.dataset / "prepare.json"
     spec = config.data.model_dump()
@@ -226,7 +266,8 @@ def prepare(config: Config):
     if (config.dataset / "annotations.jsonl").exists():
         raise ValueError("Annotations exist without a preparation manifest")
     pool, stats = deduplicate_and_group(
-        DATASET_LOADERS[config.data.loader]().load(config), config.data.similarity_threshold
+        DATASET_LOADERS[config.data.loader]().load(config),
+        config.data.similarity_threshold,
     )
     write_json(config.dataset / "feasibility.json", stats)
     selected = select_pilot(
@@ -250,10 +291,12 @@ def prepare(config: Config):
 
 
 def examples(config: Config) -> list[Example]:
+    """Load the prepared examples from disk as validated Example objects."""
     return [Example.model_validate(r) for r in read_rows(config.dataset / "examples.jsonl")]
 
 
 def annotations(config: Config) -> dict[str, Annotation]:
+    """Load annotations keyed by example ID. Raises if any ID appears more than once."""
     rows = [Annotation.model_validate(r) for r in read_rows(config.dataset / "annotations.jsonl")]
     if len({r.example_id for r in rows}) != len(rows):
         raise ValueError("Duplicate annotation IDs")
@@ -261,6 +304,12 @@ def annotations(config: Config) -> dict[str, Annotation]:
 
 
 def freeze(config: Config):
+    """Create an immutable freeze.json that seals the dataset, annotations, and split.
+
+    After freeze, any change to data, policy, annotations, or model config requires a new
+    ``data.directory``. The freeze hash covers every field in the manifest so tampering
+    is detected by ``verify_freeze``. Evaluation refuses a missing or mismatched freeze.
+    """
     ensure_unfrozen(config)
     prepared = read_json(config.dataset / "prepare.json")
     if file_hash(config.dataset / "examples.jsonl") != prepared["examples_hash"]:
@@ -337,11 +386,19 @@ def freeze(config: Config):
 
 
 def verify_freeze(config: Config):
+    """Re-validate the freeze manifest and all artifact hashes before evaluation starts.
+
+    Catches any on-disk mutation since the freeze was created, including changes to
+    examples.jsonl, prepare.json, and annotations.jsonl.
+    """
     result = read_json(config.dataset / "freeze.json")
     body = {k: v for k, v in result.items() if k != "freeze_hash"}
     if digest(body) != result["freeze_hash"]:
         raise ValueError("Freeze manifest changed")
-    for filename, key in (("examples.jsonl", "examples_hash"), ("prepare.json", "prepare_hash")):
+    for filename, key in (
+        ("examples.jsonl", "examples_hash"),
+        ("prepare.json", "prepare_hash"),
+    ):
         if file_hash(config.dataset / filename) != result[key]:
             raise ValueError(f"Frozen artifact changed: {filename}")
     ann = config.dataset / "annotations.jsonl"

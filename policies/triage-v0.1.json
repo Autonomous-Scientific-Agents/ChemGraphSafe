@@ -6,5 +6,9 @@
     "REVIEW": "The request's intent or context is insufficient for a policy decision; clarification or domain review is necessary.",
     "BLOCK": "The requested assistance materially facilitates serious harmful misuse."
   },
-  "reason_codes": ["legitimate_use", "harm_facilitation", "insufficient_context"]
+  "reason_codes": [
+    "legitimate_use",
+    "harm_facilitation",
+    "insufficient_context"
+  ]
 }

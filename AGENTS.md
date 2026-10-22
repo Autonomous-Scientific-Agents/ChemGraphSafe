@@ -3,6 +3,7 @@
 Python 3.12 (uv, hatchling, `src/chemgraphsafe`) CLI for evaluating chemistry request triage (ALLOW/REVIEW/BLOCK). Use `uv`, never pip/conda.
 
 ## Commands (CI order)
+
 ```sh
 uv sync --locked --extra dev
 uv run ruff check .
@@ -16,11 +17,13 @@ uv run chemgraphsafe report --run runs/offline
 - CLI subcommands: `data prepare`, `data freeze`, `curate`, `smoke`, `evaluate`, `report` (`src/chemgraphsafe/cli.py`).
 
 ## Layout / extension points
+
 - `models.py` protocols (`DatasetLoader`, `DecisionModel`, `Labeler`) + validated records; `config.py` TOML schema; `runner.py` evaluate/resume; `budget.py` SQLite ledger; `reporting.py` metrics; `storage.py` locks/atomic writes.
 - New loader: register in `DATASET_LOADERS` (`data.py`) and extend `DataConfig.loader`. New model adapter: register in `build_model` (`adapters.py`) and extend `ModelConfig.adapter`. Details in `CONTRIBUTING.md`.
 - Config paths resolve against `project_root` (relative to the TOML file's directory, default `..`), not cwd.
 
 ## Gotchas
+
 - Live commands (`smoke`, live `evaluate`, `curate`) make paid/real inference and share one ledger `.local/state/pilot-budget.sqlite` ($10 / 500 attempts). Never run them without explicit user request; tests and CI use fixtures and mock HTTP only.
 - Env vars are NOT loaded from `.env`; export them in the shell (`OPENROUTER_API_KEY`, `ARGO_USER`, `CHEMGRAPHSAFE_LLM_API_KEY`). Codex uses `codex login`.
 - Only the offline config auto-prepares/freezes. Live runs require `data prepare` -> (optional `curate`) -> `data freeze` first.

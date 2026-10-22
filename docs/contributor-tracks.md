@@ -3,12 +3,12 @@
 The starter is organized so four teams can work independently. Open an issue from the contribution
 template for one bounded item; avoid changing shared policy semantics without coordinating.
 
-| Track | First deliverable | Acceptance evidence |
-|---|---|---|
-| Data audit and curation | Audit quarantined IDs; add the SciSafetyBench loader | Provenance/rights record, loader tests, separate challenge-set manifest |
-| Model adapters | Add Kev or Laya serving adapter | Typed input-only contract, native response tests, identity/latency/cost reporting |
-| Evaluation and calibration | Add calibration and robustness analysis | Known-answer metric tests, valid probability provenance, explicit denominators, dev-only fitting |
-| Fine-tuning and export | Design training export and one upstream training recipe | Group-disjoint training set, audited labels, reproducible checkpoint and untouched evaluation |
+| Track                      | First deliverable                                       | Acceptance evidence                                                                              |
+| -------------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| Data audit and curation    | Audit quarantined IDs; add the SciSafetyBench loader    | Provenance/rights record, loader tests, separate challenge-set manifest                          |
+| Model adapters             | Add Kev or Laya serving adapter                         | Typed input-only contract, native response tests, identity/latency/cost reporting                |
+| Evaluation and calibration | Add calibration and robustness analysis                 | Known-answer metric tests, valid probability provenance, explicit denominators, dev-only fitting |
+| Fine-tuning and export     | Design training export and one upstream training recipe | Group-disjoint training set, audited labels, reproducible checkpoint and untouched evaluation    |
 
 ## Suggested issues
 

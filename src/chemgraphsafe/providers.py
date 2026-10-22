@@ -42,6 +42,11 @@ ARGO_WITHOUT_TEMPERATURE = {
 
 
 def argo_model(name: str) -> str:
+    """Convert an ``argo:<public-id>`` model name to the wire name Argo's API expects.
+
+    Raises ``ValueError`` for any name not in the explicit mapping — there is no
+    punctuation-stripping heuristic, so an unrecognized model fails loudly.
+    """
     if not name.startswith("argo:") or name.removeprefix("argo:") not in ARGO_MODELS:
         raise ValueError("Argo requires a supported argo:<model-id> (non-Claude) model")
     return ARGO_MODELS[name.removeprefix("argo:")]

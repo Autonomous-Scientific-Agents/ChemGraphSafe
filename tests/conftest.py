@@ -223,7 +223,10 @@ def config(tmp_path):
         offline=True,
         run_dir="runs/offline",
         data=DataConfig(
-            loader="fixture", count=10, minimum_per_class=4, directory=".local/data/test"
+            loader="fixture",
+            count=10,
+            minimum_per_class=4,
+            directory=".local/data/test",
         ),
         models=[ModelConfig(name="replay-demo", adapter="replay", model="mock-fixture-v1")],
     )

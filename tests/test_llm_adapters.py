@@ -62,7 +62,13 @@ def test_argo_wire_contract(config, monkeypatch, curator):
         "untrusted_request": {"text": "Explain chemical bonds.", "context": "Classroom"}
     }
     assert "never-send-this-secret" not in str(calls[0].headers)
-    for field in ("source_label", "source_id", "source_split", "example_id", "scihazard"):
+    for field in (
+        "source_label",
+        "source_id",
+        "source_split",
+        "example_id",
+        "scihazard",
+    ):
         assert field not in calls[0].content.decode()
     assert result.status == "ok" and result.decision == "ALLOW"
     assert result.reason == ("legitimate_use" if curator else None)
@@ -250,7 +256,11 @@ def test_argo_native_refusal_retains_usage(config, monkeypatch):
         transport=httpx.MockTransport(lambda r: httpx.Response(200, json=body))
     ) as client:
         adapter = HTTPModel(
-            config, argo_config(), Ledger(config.root / "ledger", 1, 2), "test", client=client
+            config,
+            argo_config(),
+            Ledger(config.root / "ledger", 1, 2),
+            "test",
+            client=client,
         )
         result = adapter.predict(Request(text="Atom?"), config.policy)
     assert result.status == "abstain" and result.decision is None and result.input_tokens == 12

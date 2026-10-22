@@ -14,6 +14,14 @@ from .storage import digest, read_json
 
 
 class DataConfig(Record):
+    """Controls which source to load, how to group near-duplicates, and the pilot sample size.
+
+    ``directory`` is the mutable working directory before freeze; once frozen it becomes
+    immutable and a new directory is required for any data/policy change.
+    ``inherited_freeze`` lets a new data version reuse the split order from a previous freeze,
+    keeping case ordering identical across minor data fixes.
+    """
+
     loader: Literal["scihazard", "fixture"] = "scihazard"
     directory: str = ".local/data/pilot-v1"
     fixture: str = "fixtures/examples.jsonl"
@@ -26,6 +34,18 @@ class DataConfig(Record):
 
 
 class ModelConfig(Record):
+    """Configuration for one model adapter in an evaluation run.
+
+    ``adapter`` selects the implementation: ``decisions`` for Jev via OpenRouter,
+    ``chat`` for any OpenAI-compatible endpoint, ``argo`` for hosted Argonne models,
+    ``codex`` for ChatGPT-login inference, and ``replay`` for offline fixture playback.
+
+    ``budget_mode="attempts_only"`` skips dollar reservations; use it for subscription
+    accounts (Argo, Codex) where per-token pricing is not applicable.
+    Dollar pricing fields (``input_usd_per_million``, etc.) and ``reservation_usd``
+    are rejected outright when ``budget_mode="attempts_only"``.
+    """
+
     name: str = Field(pattern=r"^[a-zA-Z0-9_-]+$")
     adapter: Literal["decisions", "chat", "replay", "argo", "codex"]
     model: str = Field(min_length=1)
@@ -38,7 +58,7 @@ class ModelConfig(Record):
     output_usd_per_million: float | None = Field(default=None, ge=0)
     per_request_usd: float = Field(default=0, ge=0)
     pricing_checked: str | None = None
-    # Conservative configured ceiling includes provider-specific hidden/output overhead.
+    # Conservative ceiling that also covers provider-side hidden overhead beyond token counts.
     reservation_usd: float | None = Field(default=None, gt=0)
     max_input_bytes: int = Field(default=32000, ge=1)
     max_output_tokens: int = Field(default=256, ge=1)
@@ -110,18 +130,33 @@ class ModelConfig(Record):
 
 
 class BudgetConfig(Record):
+    """Shared spend ceiling applied across all live commands (smoke, curate, evaluate).
+
+    The ledger path resolves relative to ``project_root``, not cwd, so all commands
+    that share a project share the same ledger regardless of where they are invoked.
+    """
+
     ledger: str = ".local/state/pilot-budget.sqlite"
     max_usd: float = Field(default=10, gt=0)
     max_attempts: int = Field(default=500, ge=1)
 
 
 class RunnerConfig(Record):
+    """HTTP retry and timeout parameters applied uniformly to every live adapter."""
+
     timeout_seconds: float = Field(default=60, gt=0)
     retries: int = Field(default=2, ge=0, le=2)
     max_retry_after_seconds: float = Field(default=60, ge=0, le=60)
 
 
 class Config(Record):
+    """Root configuration object, parsed from a TOML file by ``load_config``.
+
+    All relative paths in sub-configs resolve against ``project_root``, which itself
+    resolves relative to the TOML file's own directory. This makes configs portable:
+    moving the repo does not break path resolution as long as the TOML stays inside it.
+    """
+
     project_root: str = ".."
     policy_file: str = "policies/triage-v0.1.json"
     run_dir: str = "runs/pilot"
@@ -151,6 +186,7 @@ class Config(Record):
         return self
 
     def path(self, name: str) -> Path:
+        """Resolve a config-relative path against project_root, or return it as-is if absolute."""
         p = Path(name)
         return (self.root / p).resolve() if not p.is_absolute() else p.resolve()
 
@@ -190,6 +226,11 @@ class Config(Record):
 
 
 def load_config(path: Path) -> Config:
+    """Parse a TOML config file and pin ``root`` to the directory containing the file.
+
+    Raises ``ValueError`` if the run and dataset directories overlap — a safety check
+    that prevents an evaluate command from accidentally overwriting frozen data.
+    """
     path = path.resolve()
     c = Config.model_validate(tomllib.loads(path.read_text()))
     c.root = (path.parent / c.project_root).resolve()

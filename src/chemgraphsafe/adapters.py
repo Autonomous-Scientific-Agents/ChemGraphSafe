@@ -18,6 +18,12 @@ from .storage import canonical, read_json
 
 
 def usage_fields(body: dict) -> dict:
+    """Extract token counts and provider-reported cost from a response body.
+
+    Accepts both OpenAI-style (``prompt_tokens``/``completion_tokens``) and Anthropic-style
+    (``input_tokens``/``output_tokens``) field names. Returns only the fields that are
+    present and valid; missing or malformed fields are silently omitted.
+    """
     usage = body.get("usage") or {}
     if not isinstance(usage, dict):
         return {}
@@ -44,6 +50,11 @@ def usage_fields(body: dict) -> dict:
 
 
 def parse_decisions(body: dict) -> Prediction:
+    """Parse an OpenRouter Decisions API response into a Prediction.
+
+    Expects a ``triage`` answer of type ``choice`` with a full probability distribution.
+    Provider abstention and missing distributions are each surfaced as distinct error codes.
+    """
     common = usage_fields(body)
     answers = body.get("answers")
     answer = answers.get("triage") if isinstance(answers, dict) else None
@@ -65,6 +76,11 @@ def parse_decisions(body: dict) -> Prediction:
 
 
 def parse_chat(body: dict, curator: bool = False) -> Prediction:
+    """Parse an OpenAI-compatible chat-completions response into a Prediction.
+
+    Recognizes ``content_filter`` finish reasons and message-level refusal fields
+    as ABSTAIN rather than errors, then delegates the JSON payload to ``parse_classification``.
+    """
     common = usage_fields(body)
     choices = body.get("choices")
     if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
@@ -89,6 +105,13 @@ def parse_classification(content: str, curator: bool = False, **common) -> Predi
 
 
 class HTTPModel:
+    """Shared HTTP inference adapter used by the ``decisions``, ``chat``, and ``argo`` adapters.
+
+    Validates credentials and pricing configuration at construction time (before any spend).
+    Each ``predict`` call atomically reserves budget, makes at most ``retries + 1`` attempts
+    for transient errors, settles the actual charge, and returns a fully-populated Prediction.
+    """
+
     def __init__(
         self,
         config: Config,
@@ -124,6 +147,12 @@ class HTTPModel:
             self.client.close()
 
     def payload(self, request: Request, policy: dict) -> dict:
+        """Build the request body for the configured adapter type.
+
+        For ``decisions``, emits an OpenRouter System One payload.
+        For ``argo``, strips ``response_format`` (unsupported) and injects the Argo
+        wire model name and user field. For ``chat``, emits a standard chat-completions body.
+        """
         if self.model.adapter == "decisions":
             if self.curator:
                 raise ValueError("Curation needs a chat model capable of enumerated reason codes")
@@ -166,7 +195,8 @@ class HTTPModel:
             except ValueError:
                 try:
                     return max(
-                        0, (parsedate_to_datetime(value) - datetime.now(UTC)).total_seconds()
+                        0,
+                        (parsedate_to_datetime(value) - datetime.now(UTC)).total_seconds(),
                     )
                 except (ValueError, TypeError):
                     pass
@@ -272,6 +302,12 @@ class HTTPModel:
 
 
 class ReplayModel:
+    """Offline adapter that returns pre-recorded predictions from a JSON fixture file.
+
+    Keyed by the SHA-256 of the request's canonical JSON form. Used in CI and the
+    offline example config so no API credentials or network access are needed.
+    """
+
     def __init__(self, config: Config, model: ModelConfig):
         self.model = model
         self.records = read_json(config.path(model.replay_file))
@@ -290,8 +326,22 @@ class ReplayModel:
 
 
 def build_model(
-    config, model, ledger=None, run_key="", *, curator=False, client=None, sleep=time.sleep
+    config,
+    model,
+    ledger=None,
+    run_key="",
+    *,
+    curator=False,
+    client=None,
+    sleep=time.sleep,
 ):
+    """Instantiate the correct adapter for a given ModelConfig.
+
+    ``replay`` returns a ReplayModel (no ledger required).
+    ``codex`` lazy-loads the optional Codex SDK from ``codex.py``.
+    All other adapters return an HTTPModel. Raises ``ValueError`` if a live
+    adapter is requested without a ledger.
+    """
     if model.adapter == "replay":
         return ReplayModel(config, model)
     if ledger is None:

@@ -13,6 +13,11 @@ from .storage import atomic_text, code_hash, digest, read_json, read_rows, write
 
 
 def rate(k: int, n: int) -> dict:
+    """Compute a proportion with Wilson 95% confidence interval.
+
+    Returns ``{"value": None, "ci95": None}`` when ``n == 0`` to make missing-data
+    behavior explicit in every metric rather than silently propagating NaN.
+    """
     if not n:
         return {"count": k, "n": n, "value": None, "ci95": None}
     z = 1.959963984540054
@@ -28,6 +33,13 @@ def _fscore(tp, fp, fn, beta=1):
 
 
 def metrics(refs: list[dict], predictions: dict[str, Prediction]) -> dict:
+    """Compute triage metrics for one model against the reference set.
+
+    Every intended case (error, abstain, or decided) stays in the denominator for
+    interception recall and per-class rates. Abstentions are tracked separately and
+    never counted as REVIEW decisions. Policy-label agreement metrics are computed
+    only when at least one example has a non-error annotation.
+    """
     pairs = [
         (r, predictions.get(r["id"], Prediction(status="error", error_code="missing_prediction")))
         for r in refs
@@ -108,6 +120,12 @@ def _csv(rows: list[dict]) -> str:
 
 
 def report(run: Path):
+    """Generate metrics.json, comparison.csv, errors files, and report.md for a completed run.
+
+    Verifies the reference hash from the manifest before computing metrics so that
+    any post-run tampering is detected. Always-ALLOW and always-REVIEW diagnostic
+    baselines are included alongside real models to prevent recall-only comparisons.
+    """
     manifest = read_json(run / "manifest.json")
     refs = read_json(run / "references.json")
     if digest(refs) != manifest["references_hash"]:

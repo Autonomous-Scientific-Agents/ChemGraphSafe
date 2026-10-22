@@ -9,15 +9,65 @@ measurements are a separate step.
 **Project website:** <https://autonomous-scientific-agents.github.io/ChemGraphSafe/>
 
 ChemGraphSafe is a project for the [Open Scientific Intelligence (OSI) Hackathon](https://llmhackathon.github.io/),
-October 21–22, 2026, formerly the LLM Hackathon for Applications in Materials Science & Chemistry.
-The longer-term goal is a safety layer for the [ChemGraph](https://github.com/argonne-lcf/ChemGraph)
-agent. This milestone covers request triage only: no response evaluation, agent/tool execution,
-training, or production enforcement. See [Join the project](#join-the-project) to contribute.
+October 21–22, 2026. The longer-term goal is a safety layer for the
+[ChemGraph](https://github.com/argonne-lcf/ChemGraph) agent. This milestone covers request triage
+only: no response evaluation, agent/tool execution, training, or production enforcement.
 
-## Run the offline example
+---
 
-Requires Python 3.12 and [uv](https://docs.astral.sh/uv/). Tested on macOS/Linux; local workflow
-locking currently uses POSIX `flock`.
+## Repository layout
+
+```
+ChemGraphSafe/
+├── src/chemgraphsafe/       # All source code (one package)
+│   ├── models.py            # Typed data records + extension protocols (DatasetLoader, DecisionModel, Labeler)
+│   ├── config.py            # TOML schema; all paths resolve relative to project_root
+│   ├── data.py              # Dataset loaders, deduplication/grouping, prepare/freeze lifecycle
+│   ├── adapters.py          # HTTP model adapters (Jev decisions, chat, Argo, replay)
+│   ├── codex.py             # Codex adapter (optional SDK; lazy-loaded)
+│   ├── runner.py            # evaluate/smoke/curate workflows; run-identity and resume logic
+│   ├── budget.py            # SQLite spend ledger shared across all live commands
+│   ├── reporting.py         # Metrics computation and report generation
+│   ├── storage.py           # Canonical hashes, atomic file writes, POSIX workflow locks
+│   ├── providers.py         # Argo model name registry
+│   └── cli.py               # Typer CLI entry-points (data prepare/freeze, evaluate, smoke, curate, report)
+│
+├── configs/                 # Ready-to-use TOML configurations
+│   ├── offline.toml         # Safe local run using fixture replays (no API key needed)
+│   ├── pilot.toml           # Real pilot: SciHazard dataset + Jev via OpenRouter
+│   ├── argo.toml            # Argo (Argonne-hosted) baseline
+│   └── codex.toml           # Codex (ChatGPT login) baseline
+│
+├── tests/                   # pytest suite — all offline, mock HTTP only
+├── fixtures/                # Owned harmless examples + pre-recorded predictions (checked in)
+├── policies/                # Policy definition JSON (triage-v0.1.json)
+├── docs/                    # Topic-specific documentation
+│   ├── evaluation.md        # Versioning, freeze/run identity, experiment discipline
+│   ├── llm-adapters.md      # Adapter auth, accounting, how to add a new adapter
+│   ├── dataset-card.md      # Source provenance, rights, and dataset construction notes
+│   ├── model-card.md        # Model configuration reference
+│   ├── verification.md      # How contracts and leakage checks work
+│   ├── contributor-tracks.md# Four independent work tracks for contributors
+│   ├── scisafetybench-loader.md  # Loader contract example for SciSafetyBench
+│   └── internal/            # Original design spec and independent review log
+│       ├── design-spec.md   # Full implementation plan (reference only)
+│       └── review-log.md    # Independent review record
+├── site/                    # Project website source
+├── CONTRIBUTING.md          # How to contribute, checks, and experiment discipline
+├── AGENTS.md                # Instructions for AI coding agents working in this repo
+└── pyproject.toml           # Package metadata, dependencies, tool configuration
+```
+
+The three extension points are `DatasetLoader`, `DecisionModel`, and `Labeler` in
+[`models.py`](src/chemgraphsafe/models.py). Register new loaders in `DATASET_LOADERS`
+(`data.py`) and new adapters in `build_model` (`adapters.py`).
+
+---
+
+## Quickstart — offline example
+
+Requires Python 3.12 and [uv](https://docs.astral.sh/uv/). Tested on macOS/Linux; locking uses
+POSIX `flock`.
 
 ```sh
 uv sync --locked --extra dev
@@ -28,6 +78,8 @@ uv run chemgraphsafe report --run runs/offline
 Open `runs/offline/report.md`. The owned, harmless fixtures have **synthetic reference labels and
 replayed predictions**. All outputs explicitly say MOCK/OFFLINE; they are not model measurements.
 The first evaluation prepares a local fixture freeze. Subsequent identical invocations resume.
+
+---
 
 ## Prepare the real pilot
 
@@ -45,6 +97,8 @@ The freeze preserves source labels, approximately 20 development / 80 evaluation
 seeded case order. Three-way policy metrics are unavailable until the separate annotation step.
 Raw source answers and reasoning are never sent to classifiers. Source labels are references,
 not a claim of independently validated ChemGraphSafe ground truth.
+
+---
 
 ## Run Jev when credentials are available
 
@@ -67,6 +121,8 @@ retries, curation, smoke, and versioned reruns. Unknown charges retain their res
 ceilings are estimates based on configured prices; an actual charge above its reservation stops
 the run and is disclosed. Budgets may prevent a full rerun. Missing rates fail before inference.
 
+---
+
 ## Use Argo or Codex
 
 For hosted Argo, export `ARGO_USER` with your Argonne username and use `configs/argo.toml`.
@@ -87,23 +143,27 @@ uv run chemgraphsafe smoke --config configs/argo.toml
 uv run --extra codex chemgraphsafe smoke --config configs/codex.toml
 ```
 
-These commands perform live inference. Both examples explicitly use `budget_mode="attempts_only"`:
-every attempt shares the 500-attempt cap, but subscription/institutional usage has no dollar
-estimate and does not consume the metered $10 allowance. See [LLM setup](docs/llm-adapters.md)
-for curation, generic endpoints, accounting, and versioned evaluation instructions.
+These commands perform live inference. Both examples use `budget_mode="attempts_only"`:
+subscription/institutional usage has no dollar estimate and does not consume the metered $10
+allowance. See [LLM setup](docs/llm-adapters.md) for curation, generic endpoints, and versioned
+evaluation instructions.
+
+---
 
 ## Interpret the report
 
-- Primary: source-label interception recall together with benign BLOCK/REVIEW rates and burden.
+- **Primary**: source-label interception recall together with benign BLOCK/REVIEW rates and burden.
 - Native provider refusals are ABSTAIN, separate from policy REVIEW. Interception lower/upper
   bounds exclude/include abstentions; operational errors count as misses in both bounds.
 - Decided-only precision/F1/F2 explicitly report their denominator. All intended cases remain in
   primary rates. Always-ALLOW and always-REVIEW diagnostics prevent misleading recall claims.
-- Secondary: agreement with provisional policy labels, when present. No confidence or probability
+- **Secondary**: agreement with provisional policy labels, when present. No confidence or probability
   is invented for label-only LLMs. Calibration analysis is a contributor task.
-- `metrics.json` has Wilson intervals, coverage, failures, latency, cost and source/category slices.
+- `metrics.json` has Wilson intervals, coverage, failures, latency, cost, and source/category slices.
   `comparison.csv` is the compact evaluation comparison. `errors.jsonl` and `errors.csv` contain
   IDs and fixed issue codes; join locally to the ignored dataset to inspect request text.
+
+---
 
 ## Join the project
 
@@ -121,12 +181,14 @@ for curation, generic endpoints, accounting, and versioned evaluation instructio
 No GPU is needed except for the fine-tuning track. Do not paste safety-dataset request text into
 issues, pull requests, or Slack; share aggregate metrics and ID-only errors.
 
+---
+
 ## Extend the project
 
 Start with [CONTRIBUTING.md](CONTRIBUTING.md) and [the contributor tracks](docs/contributor-tracks.md).
 See [dataset provenance](docs/dataset-card.md), [evaluation and versioning](docs/evaluation.md),
-and [model configuration](docs/model-card.md). The implementation plan and independent review
-record are in `PLAN.md` and `PLAN-REVIEW-LOG.md`.
+and [model configuration](docs/model-card.md). The original design spec and independent review
+record live in [`docs/internal/`](docs/internal/).
 
 ```sh
 uv run ruff check .

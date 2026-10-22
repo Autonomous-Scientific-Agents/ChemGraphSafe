@@ -1,29 +1,67 @@
 # Contributing
 
-Start with Python 3.12 and `uv sync --locked --extra dev`. Run the offline example in
-the README before selecting a [contributor track](docs/contributor-tracks.md).
-Keep changes scoped to one loader, adapter, metric, or curation improvement.
+## Before you start
+
+1. Install Python 3.12 and [uv](https://docs.astral.sh/uv/).
+2. Run `uv sync --locked --extra dev` and then the offline example in the README to verify your
+   environment.
+3. Pick a [contributor track](docs/contributor-tracks.md) and claim it with a GitHub issue before
+   opening a pull request.
+
+Keep changes scoped to one loader, adapter, metric, or curation improvement per pull request.
+
+---
+
+## Quick reference — where things live
+
+| Topic | File |
+|---|---|
+| Data records and extension protocols | [`src/chemgraphsafe/models.py`](src/chemgraphsafe/models.py) |
+| TOML config schema | [`src/chemgraphsafe/config.py`](src/chemgraphsafe/config.py) |
+| Dataset loaders | [`src/chemgraphsafe/data.py`](src/chemgraphsafe/data.py) |
+| Model adapters | [`src/chemgraphsafe/adapters.py`](src/chemgraphsafe/adapters.py) |
+| Evaluation / smoke / curate workflows | [`src/chemgraphsafe/runner.py`](src/chemgraphsafe/runner.py) |
+| Metrics and report generation | [`src/chemgraphsafe/reporting.py`](src/chemgraphsafe/reporting.py) |
+| Budget ledger | [`src/chemgraphsafe/budget.py`](src/chemgraphsafe/budget.py) |
+| LLM adapter auth and accounting | [`docs/llm-adapters.md`](docs/llm-adapters.md) |
+| Dataset provenance | [`docs/dataset-card.md`](docs/dataset-card.md) |
+| Freeze / run versioning rules | [`docs/evaluation.md`](docs/evaluation.md) |
+| SciSafetyBench loader contract | [`docs/scisafetybench-loader.md`](docs/scisafetybench-loader.md) |
+| Contributor tracks | [`docs/contributor-tracks.md`](docs/contributor-tracks.md) |
+
+---
 
 ## Extension points
 
-- `models.py`: `DatasetLoader`, `DecisionModel`, and `Labeler` protocols and validated records.
-- `data.py`: implement `load(config) -> list[Example]`, register the loader in
-  `DATASET_LOADERS`, and extend `DataConfig.loader`. Include provenance and processing rights.
-- `adapters.py`: implement `predict(Request, policy) -> Prediction` and `close()`, register it
-  in `build_model`, and extend `ModelConfig.adapter`. Only request text/context reaches a model.
-  Argo shares the HTTP transport; `codex.py` lazily loads the optional SDK. See
-  [LLM adapter setup](docs/llm-adapters.md) for their authentication and accounting contracts.
-- `prompts.py` holds shared classification instructions and Codex's freeze-level prompt
-  fingerprint. `provenance.py` collects installed runtime dependencies without dev extras.
-  Codex constructors expose `runtime_provenance` after no-inference preflight. The runner binds
-  the finalized `run_key` to live adapters before prediction; construction must not spend attempts.
-- `reporting.py`: add metrics with explicit denominators, missing-data behavior, and reference
-  provenance. Use successful decisions, native abstentions, and failures in regression cases.
+### Adding a new dataset loader
+1. Create a class with `load(config: Config) -> list[Example]` in `data.py`.
+2. Register it in `DATASET_LOADERS` with a string key.
+3. Extend `DataConfig.loader` in `config.py` with the new key.
+4. Include provenance fields (`source`, `source_revision`, `license`, `rights_evidence`) and
+   ensure `hosted_processing_allowed` is set correctly.
+5. See [`docs/scisafetybench-loader.md`](docs/scisafetybench-loader.md) for a concrete contract
+   example.
 
-These are deliberately small extension points. No plugin service or GPU dependency is required.
-See [SciSafetyBench's loader contract](docs/scisafetybench-loader.md) for a concrete first issue.
+### Adding a new model adapter
+1. Create a class with `predict(request: Request, policy: dict) -> Prediction` and `close()` in
+   `adapters.py` (or a dedicated module for large adapters like `codex.py`).
+2. Register it in `build_model` and extend `ModelConfig.adapter` in `config.py`.
+3. Only `request.text` and `request.context` may reach the model — never source IDs, labels,
+   or annotations. See [`docs/llm-adapters.md`](docs/llm-adapters.md) for the full contract.
+4. Classification prompts live in `prompts.py`; runtime dependency fingerprints live in
+   `provenance.py`. Codex adapters expose `runtime_provenance` after a no-inference preflight.
+   The runner binds `run_key` to live adapters before prediction; construction must not spend attempts.
+
+### Adding new metrics
+- Add them to `reporting.py` with explicit denominators and documented missing-data behavior.
+- Use successful decisions, native abstentions, and failures as separate categories.
+- See [`docs/verification.md`](docs/verification.md) for the denominator contracts.
+
+---
 
 ## Checks for a contribution
+
+All three must pass before opening a pull request:
 
 ```sh
 uv run ruff check .
@@ -31,29 +69,51 @@ uv run ruff format --check src tests
 uv run pytest -q
 ```
 
-Add tests for behavior that could invalidate an experiment: provider contract parsing, label
-leakage, source provenance, grouping, denominators, budget handling, or resume identity.
-CI uses harmless fixtures and mock HTTP only. Keep keys in your shell environment; `.env.example`
-is documentation, and the program does not automatically load `.env` files.
+For Codex adapter changes, also run:
 
-For Codex changes, also run `uv sync --locked --extra dev --extra codex` followed by
-`uv run --extra codex pytest -q tests/test_codex_adapter.py`. This exercises the locked SDK's
-actual notification types without launching its runtime or making inference requests. The rest
-of the Codex tests use an async fake SDK and also run without the optional dependency installed.
-For dependency updates, follow the [SDK upgrade workflow](docs/llm-adapters.md#codex-subscription)
-and retain the tested SDK/runtime versions in `uv.lock`.
+```sh
+uv sync --locked --extra dev --extra codex
+uv run --extra codex pytest -q tests/test_codex_adapter.py
+```
 
-Do not commit raw downloads, annotations, request text from safety datasets, API responses, or
-local run directories. Share aggregate results and ID-only errors after checking source terms.
-Downloaded data retain their own licenses. New source integrations must document access,
-redistribution, and hosted processing rights before being enabled.
+This exercises the locked SDK's actual notification types without launching its runtime or making
+inference requests. The rest of the Codex tests use an async fake SDK and run without the optional
+dependency. For SDK updates, follow the
+[SDK upgrade workflow](docs/llm-adapters.md#codex-subscription) and retain the tested SDK/runtime
+versions in `uv.lock`.
+
+**Write tests for anything that could invalidate an experiment:** provider contract parsing, label
+leakage, source provenance, grouping denominators, budget handling, or resume identity.
+
+CI uses harmless fixtures and mock HTTP only. Keep credentials in your shell environment; the
+program never loads `.env` files automatically.
+
+---
 
 ## Experiment discipline
 
-Use new data/run directories for changed experiments; never delete a freeze to make a check pass.
-Keep the same budget ledger across live reruns. Do not train on the current development/evaluation
-groups. Errors inspected on evaluation cases and their derivatives remain evaluation-only.
-Provisional annotations need an independent audit before they become trusted training labels.
+- Use new data directories for changed dataset/policy/prompt/model configurations; never delete a
+  freeze to make a check pass.
+- Changed inference code requires a new run directory (the run identity includes a code hash).
+- Do not train on the current development or evaluation groups.
+- Errors inspected on evaluation cases and their derivatives remain evaluation-only for that version.
+- Provisional LLM annotations need an independent audit before they become trusted training labels.
 
-Open a contribution issue using the repository template with the intended output and proof
-command. Coordinate policy changes separately, since they invalidate comparisons.
+See [`docs/evaluation.md`](docs/evaluation.md) for the complete versioning and immutability rules.
+
+---
+
+## What not to commit
+
+- Raw downloads, API responses, annotations, or run artifacts (`runs/`, `.local/`, `data/raw/`).
+- Safety-dataset request text — share aggregate metrics and ID-only errors instead.
+- Credentials or `.env` files.
+
+New source integrations must document access, redistribution, and hosted-processing rights in their
+loader before they can be enabled. Downloaded data retain their own licenses.
+
+---
+
+Open a contribution issue using the [repository template](https://github.com/Autonomous-Scientific-Agents/ChemGraphSafe/issues/new/choose)
+with the intended output and proof command. Coordinate policy changes separately, since they
+invalidate comparisons across models.

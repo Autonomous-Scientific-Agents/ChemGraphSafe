@@ -1,246 +1,820 @@
 <!doctype html>
 <html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ChemGraphSafe · Chemistry request triage for safer scientific agents</title>
-<meta name="description" content="ChemGraphSafe is an open hackathon project at the OSI Hackathon 2026 (formerly the LLM Hackathon for Materials Science & Chemistry): a reproducible framework for evaluating chemistry request triage (ALLOW / REVIEW / BLOCK) with decision models, toward a safety layer for the ChemGraph agent.">
-<style>
-  :root {
-    --bg: #ffffff; --fg: #1b1f24; --muted: #57606a; --line: #d8dee4; --card: #f6f8fa;
-    --accent: #0b6e4f; --accent-soft: #e3f2ec; --allow: #1a7f37; --review: #9a6700; --block: #cf222e;
-    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root { --bg: #0d1117; --fg: #e6edf3; --muted: #9da7b3; --line: #30363d; --card: #161b22;
-            --accent: #3fb68b; --accent-soft: #10291f; --allow: #3fb950; --review: #d29922; --block: #f85149; }
-  }
-  * { box-sizing: border-box; }
-  html { scroll-behavior: smooth; }
-  body { margin: 0; font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: var(--fg); background: var(--bg); }
-  a { color: var(--accent); }
-  nav { position: sticky; top: 0; z-index: 10; background: var(--bg); border-bottom: 1px solid var(--line); }
-  nav .wrap { display: flex; gap: 1.1rem; align-items: center; flex-wrap: wrap; padding: .6rem 1.25rem; }
-  nav .brand { font-weight: 700; text-decoration: none; color: var(--fg); margin-right: auto; }
-  nav a { text-decoration: none; font-size: .92rem; }
-  .wrap { max-width: 980px; margin: 0 auto; padding: 0 1.25rem; }
-  header.hero { padding: 3.2rem 0 2.4rem; border-bottom: 1px solid var(--line); }
-  .eyebrow { display: inline-block; font-size: .82rem; font-weight: 600; letter-spacing: .02em; color: var(--accent);
-             background: var(--accent-soft); padding: .2rem .6rem; border-radius: 999px; }
-  h1 { font-size: 2.4rem; line-height: 1.15; margin: .8rem 0 .6rem; }
-  .lede { font-size: 1.15rem; color: var(--muted); max-width: 46rem; }
-  .cta { display: flex; gap: .7rem; flex-wrap: wrap; margin-top: 1.4rem; }
-  .btn { display: inline-block; padding: .55rem 1rem; border-radius: 6px; text-decoration: none; font-weight: 600; border: 1px solid var(--line); color: var(--fg); }
-  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-  section { padding: 2.4rem 0; border-bottom: 1px solid var(--line); }
-  h2 { font-size: 1.55rem; margin: 0 0 .9rem; }
-  h3 { font-size: 1.1rem; margin: 1.4rem 0 .4rem; }
-  .grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
-  .card { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 1rem 1.1rem; }
-  .card h3 { margin-top: 0; }
-  .card p, .card ul { margin: .3rem 0; }
-  table { width: 100%; border-collapse: collapse; font-size: .95rem; margin: .6rem 0; }
-  th, td { text-align: left; vertical-align: top; padding: .5rem .6rem; border-bottom: 1px solid var(--line); }
-  th { background: var(--card); }
-  code, pre { font-family: var(--mono); font-size: .88rem; }
-  code { background: var(--card); padding: .1rem .3rem; border-radius: 4px; }
-  pre { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: .9rem 1rem; overflow-x: auto; }
-  pre code { background: none; padding: 0; }
-  .tag { font-weight: 700; font-family: var(--mono); }
-  .allow { color: var(--allow); } .review { color: var(--review); } .block { color: var(--block); }
-  .note { border-left: 4px solid var(--accent); background: var(--accent-soft); padding: .7rem 1rem; border-radius: 0 6px 6px 0; }
-  ol.steps { padding-left: 1.3rem; } ol.steps li { margin: .55rem 0; }
-  .muted { color: var(--muted); }
-  footer { padding: 2rem 0 3rem; color: var(--muted); font-size: .9rem; }
-</style>
-</head>
-<body>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>
+      ChemGraphSafe · Chemistry request triage for safer scientific agents
+    </title>
+    <meta
+      name="description"
+      content="ChemGraphSafe is an open hackathon project at the OSI Hackathon 2026 (formerly the LLM Hackathon for Materials Science & Chemistry): a reproducible framework for evaluating chemistry request triage (ALLOW / REVIEW / BLOCK) with decision models, toward a safety layer for the ChemGraph agent."
+    />
+    <style>
+      :root {
+        --bg: #ffffff;
+        --fg: #1b1f24;
+        --muted: #57606a;
+        --line: #d8dee4;
+        --card: #f6f8fa;
+        --accent: #0b6e4f;
+        --accent-soft: #e3f2ec;
+        --allow: #1a7f37;
+        --review: #9a6700;
+        --block: #cf222e;
+        --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #0d1117;
+          --fg: #e6edf3;
+          --muted: #9da7b3;
+          --line: #30363d;
+          --card: #161b22;
+          --accent: #3fb68b;
+          --accent-soft: #10291f;
+          --allow: #3fb950;
+          --review: #d29922;
+          --block: #f85149;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html {
+        scroll-behavior: smooth;
+      }
+      body {
+        margin: 0;
+        font:
+          16px/1.6 system-ui,
+          -apple-system,
+          "Segoe UI",
+          Roboto,
+          sans-serif;
+        color: var(--fg);
+        background: var(--bg);
+      }
+      a {
+        color: var(--accent);
+      }
+      nav {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        background: var(--bg);
+        border-bottom: 1px solid var(--line);
+      }
+      nav .wrap {
+        display: flex;
+        gap: 1.1rem;
+        align-items: center;
+        flex-wrap: wrap;
+        padding: 0.6rem 1.25rem;
+      }
+      nav .brand {
+        font-weight: 700;
+        text-decoration: none;
+        color: var(--fg);
+        margin-right: auto;
+      }
+      nav a {
+        text-decoration: none;
+        font-size: 0.92rem;
+      }
+      .wrap {
+        max-width: 980px;
+        margin: 0 auto;
+        padding: 0 1.25rem;
+      }
+      header.hero {
+        padding: 3.2rem 0 2.4rem;
+        border-bottom: 1px solid var(--line);
+      }
+      .eyebrow {
+        display: inline-block;
+        font-size: 0.82rem;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+        color: var(--accent);
+        background: var(--accent-soft);
+        padding: 0.2rem 0.6rem;
+        border-radius: 999px;
+      }
+      h1 {
+        font-size: 2.4rem;
+        line-height: 1.15;
+        margin: 0.8rem 0 0.6rem;
+      }
+      .lede {
+        font-size: 1.15rem;
+        color: var(--muted);
+        max-width: 46rem;
+      }
+      .cta {
+        display: flex;
+        gap: 0.7rem;
+        flex-wrap: wrap;
+        margin-top: 1.4rem;
+      }
+      .btn {
+        display: inline-block;
+        padding: 0.55rem 1rem;
+        border-radius: 6px;
+        text-decoration: none;
+        font-weight: 600;
+        border: 1px solid var(--line);
+        color: var(--fg);
+      }
+      .btn.primary {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #fff;
+      }
+      section {
+        padding: 2.4rem 0;
+        border-bottom: 1px solid var(--line);
+      }
+      h2 {
+        font-size: 1.55rem;
+        margin: 0 0 0.9rem;
+      }
+      h3 {
+        font-size: 1.1rem;
+        margin: 1.4rem 0 0.4rem;
+      }
+      .grid {
+        display: grid;
+        gap: 1rem;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      }
+      .card {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 1rem 1.1rem;
+      }
+      .card h3 {
+        margin-top: 0;
+      }
+      .card p,
+      .card ul {
+        margin: 0.3rem 0;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.95rem;
+        margin: 0.6rem 0;
+      }
+      th,
+      td {
+        text-align: left;
+        vertical-align: top;
+        padding: 0.5rem 0.6rem;
+        border-bottom: 1px solid var(--line);
+      }
+      th {
+        background: var(--card);
+      }
+      code,
+      pre {
+        font-family: var(--mono);
+        font-size: 0.88rem;
+      }
+      code {
+        background: var(--card);
+        padding: 0.1rem 0.3rem;
+        border-radius: 4px;
+      }
+      pre {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 0.9rem 1rem;
+        overflow-x: auto;
+      }
+      pre code {
+        background: none;
+        padding: 0;
+      }
+      .tag {
+        font-weight: 700;
+        font-family: var(--mono);
+      }
+      .allow {
+        color: var(--allow);
+      }
+      .review {
+        color: var(--review);
+      }
+      .block {
+        color: var(--block);
+      }
+      .note {
+        border-left: 4px solid var(--accent);
+        background: var(--accent-soft);
+        padding: 0.7rem 1rem;
+        border-radius: 0 6px 6px 0;
+      }
+      ol.steps {
+        padding-left: 1.3rem;
+      }
+      ol.steps li {
+        margin: 0.55rem 0;
+      }
+      .muted {
+        color: var(--muted);
+      }
+      footer {
+        padding: 2rem 0 3rem;
+        color: var(--muted);
+        font-size: 0.9rem;
+      }
+    </style>
+  </head>
+  <body>
+    <nav>
+      <div class="wrap">
+        <a class="brand" href="#top">ChemGraphSafe</a>
+        <a href="#why">Why</a>
+        <a href="#scope">Scope</a>
+        <a href="#models">Decision models</a>
+        <a href="#status">Status</a>
+        <a href="#tracks">Tracks</a>
+        <a href="#join">Join</a>
+        <a href="https://github.com/Autonomous-Scientific-Agents/ChemGraphSafe"
+          >GitHub</a
+        >
+      </div>
+    </nav>
 
-<nav><div class="wrap">
-  <a class="brand" href="#top">ChemGraphSafe</a>
-  <a href="#why">Why</a>
-  <a href="#scope">Scope</a>
-  <a href="#models">Decision models</a>
-  <a href="#status">Status</a>
-  <a href="#tracks">Tracks</a>
-  <a href="#join">Join</a>
-  <a href="https://github.com/Autonomous-Scientific-Agents/ChemGraphSafe">GitHub</a>
-</div></nav>
+    <header class="hero" id="top">
+      <div class="wrap">
+        <span class="eyebrow"
+          >OSI Hackathon 2026 · October 21–22, 2026 · hybrid</span
+        >
+        <h1>ChemGraphSafe</h1>
+        <p class="lede">
+          Chemistry request triage for safer scientific agents. We are building
+          an open, reproducible framework that measures how well decision models
+          sort chemistry requests into <span class="tag allow">ALLOW</span>,
+          <span class="tag review">REVIEW</span>, or
+          <span class="tag block">BLOCK</span>. The goal is to block assistance
+          that materially facilitates serious harm without refusing legitimate
+          research on hazardous chemistry.
+        </p>
+        <div class="cta">
+          <a class="btn primary" href="#join">Join the project</a>
+          <a
+            class="btn"
+            href="https://github.com/Autonomous-Scientific-Agents/ChemGraphSafe"
+            >Repository</a
+          >
+          <a
+            class="btn"
+            href="https://github.com/Autonomous-Scientific-Agents/ChemGraphSafe/issues/new/choose"
+            >Open a contribution issue</a
+          >
+        </div>
+        <p class="muted" style="margin-top: 1.2rem">
+          A project for the
+          <a href="https://llmhackathon.github.io/"
+            >Open Scientific Intelligence (OSI) Hackathon</a
+          >, formerly the LLM Hackathon for Applications in Materials Science
+          &amp; Chemistry.
+        </p>
+      </div>
+    </header>
 
-<header class="hero" id="top"><div class="wrap">
-  <span class="eyebrow">OSI Hackathon 2026 · October 21–22, 2026 · hybrid</span>
-  <h1>ChemGraphSafe</h1>
-  <p class="lede">Chemistry request triage for safer scientific agents. We are building an open, reproducible
-    framework that measures how well decision models sort chemistry requests into
-    <span class="tag allow">ALLOW</span>, <span class="tag review">REVIEW</span>, or <span class="tag block">BLOCK</span>.
-    The goal is to block assistance that materially facilitates serious harm without refusing legitimate research on hazardous chemistry.</p>
-  <div class="cta">
-    <a class="btn primary" href="#join">Join the project</a>
-    <a class="btn" href="https://github.com/Autonomous-Scientific-Agents/ChemGraphSafe">Repository</a>
-    <a class="btn" href="https://github.com/Autonomous-Scientific-Agents/ChemGraphSafe/issues/new/choose">Open a contribution issue</a>
-  </div>
-  <p class="muted" style="margin-top:1.2rem">A project for the <a href="https://llmhackathon.github.io/">Open Scientific Intelligence (OSI) Hackathon</a>,
-    formerly the LLM Hackathon for Applications in Materials Science &amp; Chemistry.</p>
-</div></header>
+    <main>
+      <section id="why">
+        <div class="wrap">
+          <h2>Why this matters</h2>
+          <p>
+            Chemistry agents such as
+            <a href="https://github.com/argonne-lcf/ChemGraph">ChemGraph</a> do
+            more than answer questions. They plan workflows, call
+            cheminformatics and simulation tools, and assemble results across
+            many steps. A safety layer for such an agent has to make two kinds
+            of decision correctly:
+          </p>
+          <div class="grid">
+            <div class="card">
+              <h3>Intercept harmful requests</h3>
+              <p>
+                Catch requests whose assistance would materially facilitate
+                serious harmful misuse, including ones phrased in technical or
+                indirect ways.
+              </p>
+            </div>
+            <div class="card">
+              <h3>Avoid over-refusal</h3>
+              <p>
+                Researchers legitimately study toxic, energetic, and regulated
+                compounds for safety, detection, and remediation.
+                <strong
+                  >A hazardous topic alone is not a reason to block.</strong
+                >
+              </p>
+            </div>
+            <div class="card">
+              <h3>Measure it honestly</h3>
+              <p>
+                Report interception recall <em>together with</em> the burden
+                placed on benign users, using pinned data, frozen splits, and
+                explicit denominators.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
 
-<main>
+      <section id="scope">
+        <div class="wrap">
+          <h2>Hackathon scope</h2>
+          <p>
+            This milestone covers <strong>request triage only</strong>.
+            ChemGraphSafe classifies the incoming request. It does not generate
+            or evaluate responses, execute agents or tools, train models, or
+            enforce anything in production.
+          </p>
 
-<section id="why"><div class="wrap">
-  <h2>Why this matters</h2>
-  <p>Chemistry agents such as <a href="https://github.com/argonne-lcf/ChemGraph">ChemGraph</a> do more than answer questions.
-    They plan workflows, call cheminformatics and simulation tools, and assemble results across many steps.
-    A safety layer for such an agent has to make two kinds of decision correctly:</p>
-  <div class="grid">
-    <div class="card"><h3>Intercept harmful requests</h3><p>Catch requests whose assistance would materially facilitate serious harmful misuse, including ones phrased in technical or indirect ways.</p></div>
-    <div class="card"><h3>Avoid over-refusal</h3><p>Researchers legitimately study toxic, energetic, and regulated compounds for safety, detection, and remediation. <strong>A hazardous topic alone is not a reason to block.</strong></p></div>
-    <div class="card"><h3>Measure it honestly</h3><p>Report interception recall <em>together with</em> the burden placed on benign users, using pinned data, frozen splits, and explicit denominators.</p></div>
-  </div>
-</div></section>
+          <h3>Policy v0.1</h3>
+          <table>
+            <tr>
+              <th>Decision</th>
+              <th>
+                Criterion (from
+                <a
+                  href="https://github.com/Autonomous-Scientific-Agents/ChemGraphSafe/blob/main/policies/triage-v0.1.json"
+                  ><code>policies/triage-v0.1.json</code></a
+                >)
+              </th>
+            </tr>
+            <tr>
+              <td class="tag allow">ALLOW</td>
+              <td>
+                Legitimate education, research, or safety assistance without
+                materially facilitating serious harm.
+              </td>
+            </tr>
+            <tr>
+              <td class="tag review">REVIEW</td>
+              <td>
+                The request's intent or context is insufficient for a policy
+                decision; clarification or domain review is necessary.
+              </td>
+            </tr>
+            <tr>
+              <td class="tag block">BLOCK</td>
+              <td>
+                The requested assistance materially facilitates serious harmful
+                misuse.
+              </td>
+            </tr>
+          </table>
+          <p class="muted">
+            A provider-native refusal is recorded as ABSTAIN, separate from
+            policy REVIEW. Transport and schema failures are recorded as
+            explicit errors and count as misses.
+          </p>
 
-<section id="scope"><div class="wrap">
-  <h2>Hackathon scope</h2>
-  <p>This milestone covers <strong>request triage only</strong>. ChemGraphSafe classifies the incoming request. It does not generate or evaluate responses, execute agents or tools, train models, or enforce anything in production.</p>
+          <h3>What the framework provides</h3>
+          <div class="grid">
+            <div class="card">
+              <h3>Pilot dataset</h3>
+              <p>
+                Chemistry requests from the pinned
+                <a href="https://github.com/AI45Lab/DeepSafe-Sci"
+                  >SciHazard release</a
+                >
+                (CC BY 4.0), checksummed, deduplicated and grouped. A seeded
+                selection of 100 cases (50 benign / 50 harmful), split about 20
+                development / 80 evaluation.
+              </p>
+            </div>
+            <div class="card">
+              <h3>Model adapters</h3>
+              <p>
+                Jev through OpenRouter's Decisions API, hosted Argo, Codex with
+                a ChatGPT login, and configurable OpenAI-compatible chat
+                endpoints. Contracts are tested offline with mocked HTTP.
+              </p>
+            </div>
+            <div class="card">
+              <h3>Metrics and reports</h3>
+              <p>
+                Interception recall bounds, benign BLOCK/REVIEW rates, review
+                burden, Wilson 95% intervals, latency, and cost. Always-ALLOW
+                and always-REVIEW baselines are included, and error queues
+                contain IDs only.
+              </p>
+            </div>
+            <div class="card">
+              <h3>Experiment discipline</h3>
+              <p>
+                Immutable data freezes, run identities that include the code
+                hash, and one shared budget ledger ($10 and 500 attempts) for
+                all live calls. Labels and IDs never reach a model.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
 
-  <h3>Policy v0.1</h3>
-  <table>
-    <tr><th>Decision</th><th>Criterion (from <a href="https://github.com/Autonomous-Scientific-Agents/ChemGraphSafe/blob/main/policies/triage-v0.1.json"><code>policies/triage-v0.1.json</code></a>)</th></tr>
-    <tr><td class="tag allow">ALLOW</td><td>Legitimate education, research, or safety assistance without materially facilitating serious harm.</td></tr>
-    <tr><td class="tag review">REVIEW</td><td>The request's intent or context is insufficient for a policy decision; clarification or domain review is necessary.</td></tr>
-    <tr><td class="tag block">BLOCK</td><td>The requested assistance materially facilitates serious harmful misuse.</td></tr>
-  </table>
-  <p class="muted">A provider-native refusal is recorded as ABSTAIN, separate from policy REVIEW. Transport and schema failures are recorded as explicit errors and count as misses.</p>
+      <section id="models">
+        <div class="wrap">
+          <h2>Decision models</h2>
+          <p>
+            A <em>decision model</em> ("System One" model) takes a state and
+            typed questions and returns a probability for every option instead
+            of generated text. The answer cannot fall outside the option set, so
+            a triage decision and its class probabilities come back in one call.
+            When those probabilities are genuinely calibrated, they make it
+            possible to set a threshold and to defer uncertain cases to review.
+          </p>
+          <table>
+            <tr>
+              <th>Model</th>
+              <th>Access</th>
+              <th>Status in ChemGraphSafe</th>
+            </tr>
+            <tr>
+              <td>Jev (TypeSafe)</td>
+              <td>Hosted, via OpenRouter's Decisions API</td>
+              <td>
+                Adapter implemented and contract-tested; live pilot run pending
+                credentials
+              </td>
+            </tr>
+            <tr>
+              <td><a href="https://github.com/jaredpalmer/kev">Kev</a></td>
+              <td>Open weights, trainable</td>
+              <td>
+                Contributor track: serving adapter, then fine-tuning recipe
+              </td>
+            </tr>
+            <tr>
+              <td><a href="https://github.com/NandhaKishorM/laya">Laya</a></td>
+              <td>Open weights, trainable</td>
+              <td>
+                Contributor track: serving adapter, then fine-tuning recipe
+              </td>
+            </tr>
+            <tr>
+              <td>LLM classifiers (Argo, Codex, OpenAI-compatible)</td>
+              <td>Hosted chat models</td>
+              <td>
+                Adapters implemented; label-only, so no probabilities are
+                invented for them
+              </td>
+            </tr>
+          </table>
+          <p class="muted">
+            Once the Kev or Laya adapter lands, other open System One-compatible
+            models (for example Lev) are welcome as further adapters.
+          </p>
+        </div>
+      </section>
 
-  <h3>What the framework provides</h3>
-  <div class="grid">
-    <div class="card"><h3>Pilot dataset</h3><p>Chemistry requests from the pinned <a href="https://github.com/AI45Lab/DeepSafe-Sci">SciHazard release</a> (CC BY 4.0), checksummed, deduplicated and grouped. A seeded selection of 100 cases (50 benign / 50 harmful), split about 20 development / 80 evaluation.</p></div>
-    <div class="card"><h3>Model adapters</h3><p>Jev through OpenRouter's Decisions API, hosted Argo, Codex with a ChatGPT login, and configurable OpenAI-compatible chat endpoints. Contracts are tested offline with mocked HTTP.</p></div>
-    <div class="card"><h3>Metrics and reports</h3><p>Interception recall bounds, benign BLOCK/REVIEW rates, review burden, Wilson 95% intervals, latency, and cost. Always-ALLOW and always-REVIEW baselines are included, and error queues contain IDs only.</p></div>
-    <div class="card"><h3>Experiment discipline</h3><p>Immutable data freezes, run identities that include the code hash, and one shared budget ledger ($10 and 500 attempts) for all live calls. Labels and IDs never reach a model.</p></div>
-  </div>
-</div></section>
+      <section id="status">
+        <div class="wrap">
+          <h2>Current status</h2>
+          <p>
+            From the repository's
+            <a
+              href="https://github.com/Autonomous-Scientific-Agents/ChemGraphSafe/blob/main/docs/verification.md"
+              >local verification record</a
+            >
+            (macOS, 2026-10-19):
+          </p>
+          <ul>
+            <li>
+              Locked install, lint, and 35 tests pass using harmless fixtures
+              and mock HTTP. No paid inference was used.
+            </li>
+            <li>
+              The offline <code>evaluate</code> → <code>report</code> example
+              runs end to end, and its output is clearly marked MOCK/OFFLINE.
+            </li>
+            <li>
+              The real SciHazard import passes both pinned checksums: 250
+              chemistry records, of which 22 native/split label conflicts are
+              quarantined, leaving 228 eligible groups. 100 groups are selected
+              (50/50).
+            </li>
+            <li>
+              The frozen split has 10 + 10 development cases and 40 + 40
+              evaluation cases, with zero policy annotations (source labels
+              only).
+            </li>
+            <li>
+              The live Jev smoke test and evaluation have
+              <strong>not run yet</strong>. Training, calibration, and live LLM
+              comparisons are contributor work.
+            </li>
+          </ul>
+          <div class="note">
+            ChemGraphSafe is a preliminary research tool, not a production
+            safety gate. The 80-case holdout is preliminary, and source labels
+            are references, not independently validated ground truth.
+          </div>
+        </div>
+      </section>
 
-<section id="models"><div class="wrap">
-  <h2>Decision models</h2>
-  <p>A <em>decision model</em> ("System One" model) takes a state and typed questions and returns a probability for every option instead of generated text.
-    The answer cannot fall outside the option set, so a triage decision and its class probabilities come back in one call. When those probabilities are genuinely calibrated, they make it possible to set a threshold and to defer uncertain cases to review.</p>
-  <table>
-    <tr><th>Model</th><th>Access</th><th>Status in ChemGraphSafe</th></tr>
-    <tr><td>Jev (TypeSafe)</td><td>Hosted, via OpenRouter's Decisions API</td><td>Adapter implemented and contract-tested; live pilot run pending credentials</td></tr>
-    <tr><td><a href="https://github.com/jaredpalmer/kev">Kev</a></td><td>Open weights, trainable</td><td>Contributor track: serving adapter, then fine-tuning recipe</td></tr>
-    <tr><td><a href="https://github.com/NandhaKishorM/laya">Laya</a></td><td>Open weights, trainable</td><td>Contributor track: serving adapter, then fine-tuning recipe</td></tr>
-    <tr><td>LLM classifiers (Argo, Codex, OpenAI-compatible)</td><td>Hosted chat models</td><td>Adapters implemented; label-only, so no probabilities are invented for them</td></tr>
-  </table>
-  <p class="muted">Once the Kev or Laya adapter lands, other open System One-compatible models (for example Lev) are welcome as further adapters.</p>
-</div></section>
+      <section id="tracks">
+        <div class="wrap">
+          <h2>Contributor tracks</h2>
+          <p>
+            The work is split into four tracks that can proceed independently.
+            Pick one bounded item and open an issue from the
+            <a
+              href="https://github.com/Autonomous-Scientific-Agents/ChemGraphSafe/issues/new/choose"
+              >contribution template</a
+            >. Full details are in
+            <a
+              href="https://github.com/Autonomous-Scientific-Agents/ChemGraphSafe/blob/main/docs/contributor-tracks.md"
+              ><code>docs/contributor-tracks.md</code></a
+            >.
+          </p>
+          <table>
+            <tr>
+              <th>Track</th>
+              <th>First deliverable</th>
+              <th>Good fit if you know</th>
+            </tr>
+            <tr>
+              <td><strong>Data audit and curation</strong></td>
+              <td>
+                Audit the quarantined IDs; add the SciSafetyBench chemistry
+                loader
+              </td>
+              <td>Chemistry, lab or chemical safety, dataset provenance</td>
+            </tr>
+            <tr>
+              <td><strong>Model adapters</strong></td>
+              <td>Add a Kev or Laya serving adapter</td>
+              <td>Python, HTTP APIs, model serving</td>
+            </tr>
+            <tr>
+              <td><strong>Evaluation and calibration</strong></td>
+              <td>Add calibration and robustness analysis</td>
+              <td>Statistics, calibration metrics, evaluation design</td>
+            </tr>
+            <tr>
+              <td><strong>Fine-tuning and export</strong></td>
+              <td>
+                Design the training export and one upstream training recipe
+              </td>
+              <td>LoRA / encoder fine-tuning, data splits, reproducibility</td>
+            </tr>
+          </table>
+          <h3>Suggested first issues</h3>
+          <ol>
+            <li>
+              SciSafetyBench chemistry challenge loader (<a
+                href="https://github.com/Autonomous-Scientific-Agents/ChemGraphSafe/blob/main/docs/scisafetybench-loader.md"
+                >loader contract</a
+              >).
+            </li>
+            <li>
+              Audit source conflicts and provisional annotations, with
+              inter-reviewer agreement.
+            </li>
+            <li>
+              Kev adapter, using the upstream repository (not the unrelated PyPI
+              package named <code>kev</code>).
+            </li>
+            <li>
+              Laya adapter with a pinned checkpoint and a documented meaning of
+              confidence.
+            </li>
+            <li>
+              Calibration report (Brier, ECE, reliability) for genuine full
+              distributions only.
+            </li>
+            <li>Robustness and leakage audit with harmless perturbations.</li>
+            <li>
+              Training export contract that refuses development and evaluation
+              groups.
+            </li>
+            <li>
+              Upstream Kev or Laya fine-tuning recipe, evaluated through the
+              same runner.
+            </li>
+          </ol>
+        </div>
+      </section>
 
-<section id="status"><div class="wrap">
-  <h2>Current status</h2>
-  <p>From the repository's <a href="https://github.com/Autonomous-Scientific-Agents/ChemGraphSafe/blob/main/docs/verification.md">local verification record</a> (macOS, 2026-10-19):</p>
-  <ul>
-    <li>Locked install, lint, and 35 tests pass using harmless fixtures and mock HTTP. No paid inference was used.</li>
-    <li>The offline <code>evaluate</code> → <code>report</code> example runs end to end, and its output is clearly marked MOCK/OFFLINE.</li>
-    <li>The real SciHazard import passes both pinned checksums: 250 chemistry records, of which 22 native/split label conflicts are quarantined, leaving 228 eligible groups. 100 groups are selected (50/50).</li>
-    <li>The frozen split has 10 + 10 development cases and 40 + 40 evaluation cases, with zero policy annotations (source labels only).</li>
-    <li>The live Jev smoke test and evaluation have <strong>not run yet</strong>. Training, calibration, and live LLM comparisons are contributor work.</li>
-  </ul>
-  <div class="note">ChemGraphSafe is a preliminary research tool, not a production safety gate. The 80-case holdout is preliminary, and source labels are references, not independently validated ground truth.</div>
-</div></section>
-
-<section id="tracks"><div class="wrap">
-  <h2>Contributor tracks</h2>
-  <p>The work is split into four tracks that can proceed independently. Pick one bounded item and open an issue from the
-    <a href="https://github.com/Autonomous-Scientific-Agents/ChemGraphSafe/issues/new/choose">contribution template</a>.
-    Full details are in <a href="https://github.com/Autonomous-Scientific-Agents/ChemGraphSafe/blob/main/docs/contributor-tracks.md"><code>docs/contributor-tracks.md</code></a>.</p>
-  <table>
-    <tr><th>Track</th><th>First deliverable</th><th>Good fit if you know</th></tr>
-    <tr><td><strong>Data audit and curation</strong></td><td>Audit the quarantined IDs; add the SciSafetyBench chemistry loader</td><td>Chemistry, lab or chemical safety, dataset provenance</td></tr>
-    <tr><td><strong>Model adapters</strong></td><td>Add a Kev or Laya serving adapter</td><td>Python, HTTP APIs, model serving</td></tr>
-    <tr><td><strong>Evaluation and calibration</strong></td><td>Add calibration and robustness analysis</td><td>Statistics, calibration metrics, evaluation design</td></tr>
-    <tr><td><strong>Fine-tuning and export</strong></td><td>Design the training export and one upstream training recipe</td><td>LoRA / encoder fine-tuning, data splits, reproducibility</td></tr>
-  </table>
-  <h3>Suggested first issues</h3>
-  <ol>
-    <li>SciSafetyBench chemistry challenge loader (<a href="https://github.com/Autonomous-Scientific-Agents/ChemGraphSafe/blob/main/docs/scisafetybench-loader.md">loader contract</a>).</li>
-    <li>Audit source conflicts and provisional annotations, with inter-reviewer agreement.</li>
-    <li>Kev adapter, using the upstream repository (not the unrelated PyPI package named <code>kev</code>).</li>
-    <li>Laya adapter with a pinned checkpoint and a documented meaning of confidence.</li>
-    <li>Calibration report (Brier, ECE, reliability) for genuine full distributions only.</li>
-    <li>Robustness and leakage audit with harmless perturbations.</li>
-    <li>Training export contract that refuses development and evaluation groups.</li>
-    <li>Upstream Kev or Laya fine-tuning recipe, evaluated through the same runner.</li>
-  </ol>
-</div></section>
-
-<section id="join"><div class="wrap">
-  <h2>How to join</h2>
-  <p>Anyone is welcome: chemists and safety specialists, ML engineers, evaluation and statistics people, and software developers. The hackathon recommends teams of 3 to 10 participants and does not enforce a limit.</p>
-  <ol class="steps">
-    <li><strong>Register for the hackathon</strong> at <a href="https://luma.com/ku88xh92">luma.com/ku88xh92</a>, and join the hackathon Slack from the <a href="https://llmhackathon.github.io/">hackathon homepage</a>.</li>
-    <li><strong>Say hello.</strong> Introduce yourself in a <a href="https://github.com/Autonomous-Scientific-Agents/ChemGraphSafe/issues">GitHub issue</a> or ping the maintainers on the hackathon Slack. Mention ChemGraphSafe and the track you are interested in.</li>
-    <li><strong>Set up</strong> Python 3.12 and <a href="https://docs.astral.sh/uv/">uv</a> on macOS or Linux (file locking uses POSIX <code>flock</code>). Then run the offline example:
-<pre><code>git clone https://github.com/Autonomous-Scientific-Agents/ChemGraphSafe.git
+      <section id="join">
+        <div class="wrap">
+          <h2>How to join</h2>
+          <p>
+            Anyone is welcome: chemists and safety specialists, ML engineers,
+            evaluation and statistics people, and software developers. The
+            hackathon recommends teams of 3 to 10 participants and does not
+            enforce a limit.
+          </p>
+          <ol class="steps">
+            <li>
+              <strong>Register for the hackathon</strong> at
+              <a href="https://luma.com/ku88xh92">luma.com/ku88xh92</a>, and
+              join the hackathon Slack from the
+              <a href="https://llmhackathon.github.io/">hackathon homepage</a>.
+            </li>
+            <li>
+              <strong>Say hello.</strong> Introduce yourself in a
+              <a
+                href="https://github.com/Autonomous-Scientific-Agents/ChemGraphSafe/issues"
+                >GitHub issue</a
+              >
+              or ping the maintainers on the hackathon Slack. Mention
+              ChemGraphSafe and the track you are interested in.
+            </li>
+            <li>
+              <strong>Set up</strong> Python 3.12 and
+              <a href="https://docs.astral.sh/uv/">uv</a> on macOS or Linux
+              (file locking uses POSIX <code>flock</code>). Then run the offline
+              example:
+              <pre><code>git clone https://github.com/Autonomous-Scientific-Agents/ChemGraphSafe.git
 cd ChemGraphSafe
 uv sync --locked --extra dev
 uv run chemgraphsafe evaluate --config configs/offline.toml
 uv run chemgraphsafe report --run runs/offline   # open runs/offline/report.md</code></pre>
-    </li>
-    <li><strong>Read</strong> <a href="https://github.com/Autonomous-Scientific-Agents/ChemGraphSafe/blob/main/CONTRIBUTING.md">CONTRIBUTING.md</a> and the <a href="https://github.com/Autonomous-Scientific-Agents/ChemGraphSafe/blob/main/docs/contributor-tracks.md">contributor tracks</a>.</li>
-    <li><strong>Claim one bounded item</strong> by opening a <a href="https://github.com/Autonomous-Scientific-Agents/ChemGraphSafe/issues/new/choose">contribution issue</a>. State the track, the observable deliverable, and the command that proves it works.</li>
-    <li><strong>Open a pull request</strong> that passes the same checks CI runs:
-<pre><code>uv run ruff check .
+            </li>
+            <li>
+              <strong>Read</strong>
+              <a
+                href="https://github.com/Autonomous-Scientific-Agents/ChemGraphSafe/blob/main/CONTRIBUTING.md"
+                >CONTRIBUTING.md</a
+              >
+              and the
+              <a
+                href="https://github.com/Autonomous-Scientific-Agents/ChemGraphSafe/blob/main/docs/contributor-tracks.md"
+                >contributor tracks</a
+              >.
+            </li>
+            <li>
+              <strong>Claim one bounded item</strong> by opening a
+              <a
+                href="https://github.com/Autonomous-Scientific-Agents/ChemGraphSafe/issues/new/choose"
+                >contribution issue</a
+              >. State the track, the observable deliverable, and the command
+              that proves it works.
+            </li>
+            <li>
+              <strong>Open a pull request</strong> that passes the same checks
+              CI runs:
+              <pre><code>uv run ruff check .
 uv run ruff format --check src tests
 uv run pytest -q</code></pre>
-    </li>
-  </ol>
+            </li>
+          </ol>
 
-  <h3>What you need</h3>
-  <ul>
-    <li>A GitHub account, Python 3.12, and uv. No GPU is needed for the default install or for most tracks.</li>
-    <li>Credentials for live runs only: <code>OPENROUTER_API_KEY</code> for Jev, <code>ARGO_USER</code> for hosted Argo (Argonne users), a <code>codex login</code> for Codex, or <code>CHEMGRAPHSAFE_LLM_API_KEY</code> for a generic endpoint. Export them in your shell; <code>.env</code> files are not loaded.</li>
-    <li>A GPU only for the fine-tuning track.</li>
-  </ul>
+          <h3>What you need</h3>
+          <ul>
+            <li>
+              A GitHub account, Python 3.12, and uv. No GPU is needed for the
+              default install or for most tracks.
+            </li>
+            <li>
+              Credentials for live runs only:
+              <code>OPENROUTER_API_KEY</code> for Jev,
+              <code>ARGO_USER</code> for hosted Argo (Argonne users), a
+              <code>codex login</code> for Codex, or
+              <code>CHEMGRAPHSAFE_LLM_API_KEY</code> for a generic endpoint.
+              Export them in your shell; <code>.env</code> files are not loaded.
+            </li>
+            <li>A GPU only for the fine-tuning track.</li>
+          </ul>
 
-  <h3>Ground rules</h3>
-  <ul>
-    <li><strong>Do not commit or paste safety-dataset content.</strong> That covers raw downloads, request text, annotations, API responses, and run directories, in Git, issues, pull requests, and Slack. Share aggregate metrics and ID-only errors.</li>
-    <li><strong>No attack generation.</strong> Robustness work uses harmless perturbations, and borderline examples are documented without operational harmful details.</li>
-    <li><strong>Live commands spend real budget.</strong> <code>smoke</code>, live <code>evaluate</code>, and <code>curate</code> share one ledger capped at $10 and 500 attempts. Run them only deliberately, and coordinate before running them on shared credentials.</li>
-    <li><strong>Protect the holdout.</strong> Never train on development or evaluation groups. Changes to data, policy, or model configuration need a new data version and freeze, and code changes need a new run directory.</li>
-    <li><strong>Coordinate policy changes separately</strong>, because they invalidate comparisons.</li>
-    <li>Respect source licenses. New datasets must document access, redistribution, and hosted-processing rights before they are enabled.</li>
-  </ul>
-</div></section>
+          <h3>Ground rules</h3>
+          <ul>
+            <li>
+              <strong>Do not commit or paste safety-dataset content.</strong>
+              That covers raw downloads, request text, annotations, API
+              responses, and run directories, in Git, issues, pull requests, and
+              Slack. Share aggregate metrics and ID-only errors.
+            </li>
+            <li>
+              <strong>No attack generation.</strong> Robustness work uses
+              harmless perturbations, and borderline examples are documented
+              without operational harmful details.
+            </li>
+            <li>
+              <strong>Live commands spend real budget.</strong>
+              <code>smoke</code>, live <code>evaluate</code>, and
+              <code>curate</code> share one ledger capped at $10 and 500
+              attempts. Run them only deliberately, and coordinate before
+              running them on shared credentials.
+            </li>
+            <li>
+              <strong>Protect the holdout.</strong> Never train on development
+              or evaluation groups. Changes to data, policy, or model
+              configuration need a new data version and freeze, and code changes
+              need a new run directory.
+            </li>
+            <li>
+              <strong>Coordinate policy changes separately</strong>, because
+              they invalidate comparisons.
+            </li>
+            <li>
+              Respect source licenses. New datasets must document access,
+              redistribution, and hosted-processing rights before they are
+              enabled.
+            </li>
+          </ul>
+        </div>
+      </section>
 
-<section id="roadmap"><div class="wrap">
-  <h2>Beyond this milestone</h2>
-  <p>The longer-term goal is a safety layer for ChemGraph built on our own fine-tuned decision model. Each step below is future work and is not claimed by the current release:</p>
-  <ul>
-    <li>A live Jev pilot, then LLM baselines and provisional three-way policy labels with an independent human audit.</li>
-    <li>Fine-tuned Kev or Laya checkpoints trained on a disjoint, licensed training partition and evaluated on a new untouched holdout.</li>
-    <li>Calibrated thresholds, so that uncertain cases are routed to human review instead of guessed.</li>
-    <li>Moving from request triage to agent trajectories: screening ChemGraph's plans, tool calls, and outputs, not only the incoming request.</li>
-  </ul>
-</div></section>
+      <section id="roadmap">
+        <div class="wrap">
+          <h2>Beyond this milestone</h2>
+          <p>
+            The longer-term goal is a safety layer for ChemGraph built on our
+            own fine-tuned decision model. Each step below is future work and is
+            not claimed by the current release:
+          </p>
+          <ul>
+            <li>
+              A live Jev pilot, then LLM baselines and provisional three-way
+              policy labels with an independent human audit.
+            </li>
+            <li>
+              Fine-tuned Kev or Laya checkpoints trained on a disjoint, licensed
+              training partition and evaluated on a new untouched holdout.
+            </li>
+            <li>
+              Calibrated thresholds, so that uncertain cases are routed to human
+              review instead of guessed.
+            </li>
+            <li>
+              Moving from request triage to agent trajectories: screening
+              ChemGraph's plans, tool calls, and outputs, not only the incoming
+              request.
+            </li>
+          </ul>
+        </div>
+      </section>
 
-<section id="resources"><div class="wrap">
-  <h2>Resources</h2>
-  <ul>
-    <li>Hackathon: <a href="https://llmhackathon.github.io/">llmhackathon.github.io</a>. See its <a href="https://llmhackathon.github.io/submission/">submission guidelines</a> and <a href="https://llmhackathon.github.io/#faq">FAQ</a>.</li>
-    <li>ChemGraph: <a href="https://github.com/argonne-lcf/ChemGraph">github.com/argonne-lcf/ChemGraph</a>, described in <a href="https://doi.org/10.1038/s42004-025-01776-9">Communications Chemistry 9, 33 (2026)</a>.</li>
-    <li>Repository docs: <a href="https://github.com/Autonomous-Scientific-Agents/ChemGraphSafe/blob/main/docs/dataset-card.md">dataset card</a>,
-      <a href="https://github.com/Autonomous-Scientific-Agents/ChemGraphSafe/blob/main/docs/model-card.md">model integration card</a>,
-      <a href="https://github.com/Autonomous-Scientific-Agents/ChemGraphSafe/blob/main/docs/evaluation.md">evaluation and versioning</a>,
-      <a href="https://github.com/Autonomous-Scientific-Agents/ChemGraphSafe/blob/main/docs/llm-adapters.md">LLM adapter setup</a>.</li>
-    <li>Maintainers: <a href="https://github.com/keceli">@keceli</a>, <a href="https://github.com/tdpham2">@tdpham2</a>.</li>
-  </ul>
-</div></section>
+      <section id="resources">
+        <div class="wrap">
+          <h2>Resources</h2>
+          <ul>
+            <li>
+              Hackathon:
+              <a href="https://llmhackathon.github.io/"
+                >llmhackathon.github.io</a
+              >. See its
+              <a href="https://llmhackathon.github.io/submission/"
+                >submission guidelines</a
+              >
+              and <a href="https://llmhackathon.github.io/#faq">FAQ</a>.
+            </li>
+            <li>
+              ChemGraph:
+              <a href="https://github.com/argonne-lcf/ChemGraph"
+                >github.com/argonne-lcf/ChemGraph</a
+              >, described in
+              <a href="https://doi.org/10.1038/s42004-025-01776-9"
+                >Communications Chemistry 9, 33 (2026)</a
+              >.
+            </li>
+            <li>
+              Repository docs:
+              <a
+                href="https://github.com/Autonomous-Scientific-Agents/ChemGraphSafe/blob/main/docs/dataset-card.md"
+                >dataset card</a
+              >,
+              <a
+                href="https://github.com/Autonomous-Scientific-Agents/ChemGraphSafe/blob/main/docs/model-card.md"
+                >model integration card</a
+              >,
+              <a
+                href="https://github.com/Autonomous-Scientific-Agents/ChemGraphSafe/blob/main/docs/evaluation.md"
+                >evaluation and versioning</a
+              >,
+              <a
+                href="https://github.com/Autonomous-Scientific-Agents/ChemGraphSafe/blob/main/docs/llm-adapters.md"
+                >LLM adapter setup</a
+              >.
+            </li>
+            <li>
+              Maintainers: <a href="https://github.com/keceli">@keceli</a>,
+              <a href="https://github.com/tdpham2">@tdpham2</a>.
+            </li>
+          </ul>
+        </div>
+      </section>
+    </main>
 
-</main>
-
-<footer><div class="wrap">
-  Code is Apache-2.0. Downloaded datasets keep their source licenses and attribution.
-  ChemGraphSafe is a preliminary research tool, not a production safety gate or an evaluation of chemistry knowledge.
-</div></footer>
-
-</body>
+    <footer>
+      <div class="wrap">
+        Code is Apache-2.0. Downloaded datasets keep their source licenses and
+        attribution. ChemGraphSafe is a preliminary research tool, not a
+        production safety gate or an evaluation of chemistry knowledge.
+      </div>
+    </footer>
+  </body>
 </html>

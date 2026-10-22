@@ -71,7 +71,10 @@ def test_openrouter_exact_wire_shape_and_no_reference_leakage(config, monkeypatc
 
 @pytest.mark.parametrize(
     "finish,message",
-    [("content_filter", {"content": None}), ("stop", {"refusal": "Declined", "content": None})],
+    [
+        ("content_filter", {"content": None}),
+        ("stop", {"refusal": "Declined", "content": None}),
+    ],
 )
 def test_documented_refusal_shapes_are_abstentions(finish, message):
     # Constructed from documented response shapes, not captured from live providers.
@@ -86,9 +89,17 @@ def test_unstructured_refusal_is_not_a_policy_review():
 
 def test_probability_validation_and_authoritative_choice():
     b = reply()
-    b["answers"]["triage"]["probabilities"] = {"ALLOW": 0.3333, "REVIEW": 0.3333, "BLOCK": 0.3333}
+    b["answers"]["triage"]["probabilities"] = {
+        "ALLOW": 0.3333,
+        "REVIEW": 0.3333,
+        "BLOCK": 0.3333,
+    }
     assert parse_decisions(b).status == "ok"
-    b["answers"]["triage"]["probabilities"] = {"ALLOW": 0.2, "REVIEW": 0.7, "BLOCK": 0.1}
+    b["answers"]["triage"]["probabilities"] = {
+        "ALLOW": 0.2,
+        "REVIEW": 0.7,
+        "BLOCK": 0.1,
+    }
     p = parse_decisions(b)
     assert p.decision == "ALLOW" and p.choice_argmax_mismatch
     for distribution in (

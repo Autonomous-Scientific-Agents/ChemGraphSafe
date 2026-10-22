@@ -95,7 +95,10 @@ def test_all_models_preflight_before_inference(config, mock_argo, fake_codex):
     config.offline = False
     config.models = [
         ModelConfig(
-            name="argo", adapter="argo", model="argo:gpt-4.1-mini", budget_mode="attempts_only"
+            name="argo",
+            adapter="argo",
+            model="argo:gpt-4.1-mini",
+            budget_mode="attempts_only",
         ),
         ModelConfig(
             name="codex",
@@ -138,7 +141,10 @@ def test_included_smoke_budget_shared_across_providers(config, mock_argo, fake_c
     config.budget.max_attempts = 6
     config.models = [
         ModelConfig(
-            name="argo", adapter="argo", model="argo:gpt-4.1-mini", budget_mode="attempts_only"
+            name="argo",
+            adapter="argo",
+            model="argo:gpt-4.1-mini",
+            budget_mode="attempts_only",
         )
     ]
     assert runner.smoke(config)["complete"]

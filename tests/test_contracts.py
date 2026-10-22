@@ -68,7 +68,10 @@ def test_curation_output_through_freeze_and_metrics(config):
         }
     write_json(config.root / "curator.json", records)
     config.curator = ModelConfig(
-        name="curator", adapter="replay", model="owned-curator", replay_file="curator.json"
+        name="curator",
+        adapter="replay",
+        model="owned-curator",
+        replay_file="curator.json",
     )
     result = curate(config)
     assert result["annotations"] == 10

@@ -18,9 +18,15 @@ app.add_typer(data_app, name="data")
 
 
 def execute(action, config: Path):
+    """Load config and run ``action`` under exclusive dataset (and run) locks.
+
+    Translates ``ValueError``, ``OSError``, and ``httpx.HTTPError`` into a clean
+    error message on stderr with exit code 1. Returns exit code 2 when a run
+    completes but with errors (incomplete inference).
+    """
     try:
         c = load_config(config)
-        # One dataset lock also prevents annotate/freeze/evaluate races across separate runs.
+        # Dataset lock also prevents concurrent annotate/freeze/evaluate races on the same dir.
         with exclusive(c.dataset / ".workflow.lock"):
             if action in (runner.evaluate, runner.smoke):
                 with exclusive(c.run / ".workflow.lock"):

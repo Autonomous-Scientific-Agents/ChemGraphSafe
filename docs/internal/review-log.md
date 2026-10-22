@@ -8,7 +8,6 @@ Plan-review budget: five completed rounds (three used before implementation). Fi
 
 Accepted review changes: explicit class-shortage rules; grouping before sampling; isolated smoke examples; a freeze command; source-reference metrics primary and LLM labels provisional; smaller milestone; cumulative budgets; separate native abstentions; versioned reruns; distinct curator/model identity checks. Remaining low-priority advice: caps may prevent reruns, and refusal-schema fixtures must disclose documentation-derived rather than live-captured provenance.
 
-
 ## File-bound review, round 4
 
 Result: /private/tmp/chemgraphsafe-claudex/claudex-y7493i5y/result.json
@@ -159,7 +158,6 @@ Host accepted F11–F13: separate data freeze compatibility from code provenance
 
 The user explicitly selected “Proceed with implementation and final code inspection”, then reiterated “Proceed with building”. Proceed on the standalone unreviewed-spec path for the final plan amendments. Codex authors the code; a fresh Claude session independently inspects it. No further plan-review rounds. No pre-build commit exists; preserve the original skill directories and inspect all added project files with a content-hash manifest. No commits or publication.
 
-
 ## Implementation and proof before inspection
 
 Codex implemented the Python package, typed records/protocols, SciHazard preparation/grouping,
@@ -187,7 +185,6 @@ before/after SHA256 content fingerprints. The pre-existing skill directories/ins
 append-only coordination log are explicitly excluded. This is not represented as a Git diff review.
 Round 1 artifact: `/private/tmp/chemgraphsafe-claudex/inspect-nbwhdefv/result.json`.
 Requested model/effort: CLI defaults; actual observed model will be recorded with the result.
-
 
 ## Review loop stopped by user
 
