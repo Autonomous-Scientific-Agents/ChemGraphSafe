@@ -176,9 +176,10 @@ calibrated confidence. It does not feed another model's output into Laya. See
 authentication, and cached-offline contracts.
 
 The v1 example uses the policy's fixed `ALLOW`, `REVIEW`, `BLOCK` option order. Laya 0.4.13
-documents option-position sensitivity and recommends balanced rotations with label-aligned
-probability averaging. Treat this first run as an integration diagnostic, not a fair comparative
-performance estimate; implement rotations under a new run identity before model comparison.
+documents [option-position sensitivity](https://github.com/NandhaKishorM/laya/blob/v0.4.13/README.md#option-order)
+and recommends balanced rotations with label-aligned probability averaging. Treat this first run as
+an integration diagnostic, not a fair comparative performance estimate; implement rotations under a
+new run identity before model comparison.
 
 ## Use Argo or Codex
 

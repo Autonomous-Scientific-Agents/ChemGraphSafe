@@ -104,9 +104,10 @@ validate that interpretation independently and fit transformations on developmen
 ### Fixed-order diagnostic limitation
 
 The initial `laya-local-v1` integration sends one choice question in the policy's fixed
-`ALLOW`, `REVIEW`, `BLOCK` order. Laya 0.4.13 documents sequential option-position bias and
-recommends evaluating balanced option rotations, mapping each distribution back to its labels, and
-averaging the aligned probabilities. A v1 result can therefore validate transport, identity,
+`ALLOW`, `REVIEW`, `BLOCK` order. Laya 0.4.13 documents
+[sequential option-position bias](https://github.com/NandhaKishorM/laya/blob/v0.4.13/README.md#option-order)
+and recommends evaluating balanced option rotations, mapping each distribution back to its labels,
+and averaging the aligned probabilities. A v1 result can therefore validate transport, identity,
 accounting, persistence, and response contracts, but it is not a fair comparative estimate of
 Laya's three-class performance.
 

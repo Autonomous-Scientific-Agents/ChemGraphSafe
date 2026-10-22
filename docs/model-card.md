@@ -41,6 +41,7 @@ dataset/run version and inherit the original split as documented
 in [evaluation.md](evaluation.md). Curator labels remain `llm_provisional`; do not score a model
 against its own generated labels as independent evidence.
 
-Kev and Laya are future adapters, not installed integrations. Confirm upstream protocols and
-model licenses before implementing their serving/training paths. A generic LoRA pipeline is not
-assumed to fit either architecture. The `replay` adapter is restricted to explicit offline runs.
+Laya is available as a local decision adapter for evaluation only; it is not a curator or training
+integration. Kev remains a future adapter. Confirm upstream protocols and model licenses before
+implementing either model's training path or Kev serving. A generic LoRA pipeline is not assumed to
+fit either architecture. The `replay` adapter is restricted to explicit offline runs.
