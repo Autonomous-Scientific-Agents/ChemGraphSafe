@@ -16,3 +16,17 @@ runs/
 !.env.example
 .DS_Store
 .claudex-loop-install.json
+
+# Raw dataset and evaluation
+sos_bench_dataset_evaluation/benchmark_records.csv
+sos_bench_dataset_evaluation/evaluation_results.csv
+
+# LaTeX build artifacts
+sos_bench_dataset_evaluation/presentation/*.aux
+sos_bench_dataset_evaluation/presentation/*.log
+sos_bench_dataset_evaluation/presentation/*.nav
+sos_bench_dataset_evaluation/presentation/*.out
+sos_bench_dataset_evaluation/presentation/*.snm
+sos_bench_dataset_evaluation/presentation/*.toc
+sos_bench_dataset_evaluation/presentation/*.vrb
+sos_bench_dataset_evaluation/presentation/*.synctex.gz
