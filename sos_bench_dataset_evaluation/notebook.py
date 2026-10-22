@@ -2,9 +2,12 @@
 # requires-python = ">=3.13"
 # dependencies = [
 #     "accelerate==1.15.0",
+#     "datasets==3.6.0",
 #     "fastapi==0.156.4",
 #     "flash-linear-attention==0.5.2",
 #     "huggingface-hub==1.33.0",
+#     "marimo==0.25.2",
+#     "pandas==2.2.3",
 #     "transformers==5.18.0",
 #     "typesafe-sdk==0.7.2",
 # ]
@@ -27,6 +30,7 @@ def _(mo):
 @app.cell
 def _():
     import csv
+    import hashlib
     import json
     import re
     from pathlib import Path
@@ -47,6 +51,7 @@ def _():
         Score,
         TypeSafeClient,
         csv,
+        hashlib,
         json,
         load_dataset,
         login,
@@ -122,7 +127,6 @@ def _(json, system_prompt):
     return (build_messages,)
 
 
-@app.cell(hide_code=True)
 @app.cell
 def _(json, re):
     def parse_reply(model_reply):
@@ -411,11 +415,22 @@ def extract_model_answers(model_response, questions_dict):
 
 
 @app.cell
-def _(Path, build_typesafe_questions, csv, json):
-    def run_evaluation(benchmark_csv_path, evaluation_client, output_path):
+def _(Path, build_typesafe_questions, csv, hashlib, json):
+    def run_evaluation(
+        benchmark_csv_path, evaluation_client, output_path, server_base_url, server_model_name
+    ):
         eval_output_path = Path(output_path)
 
+        # Fingerprint ties this CSV to a specific model config.
+        # Resuming with a different model or URL raises an error rather than silently
+        # reusing the old results.
+        run_key = hashlib.sha256(
+            f"{server_base_url}|{server_model_name}".encode()
+        ).hexdigest()[:16]
+
         eval_header = [
+            "run_key",
+            "status",
             "row_index",
             "goal",
             "original_term",
@@ -442,26 +457,23 @@ def _(Path, build_typesafe_questions, csv, json):
             "accuracy",
         ]
 
-        # collect already-evaluated row indices so a rerun skips them
+        # On resume, reject mismatched run keys so a model change is never silently ignored.
         evaluated_row_indices = set()
         if eval_output_path.exists():
-            with eval_output_path.open(
-                encoding="utf-8-sig", newline=""
-            ) as existing_file:
-                evaluated_row_indices = {
-                    int(existing_eval_row["row_index"])
-                    for existing_eval_row in csv.DictReader(existing_file)
-                }
-
-        eval_error_log_path = eval_output_path.with_name(
-            eval_output_path.stem + "_failed.log"
-        )
+            with eval_output_path.open(encoding="utf-8-sig", newline="") as existing_file:
+                for existing_row in csv.DictReader(existing_file):
+                    existing_key = existing_row.get("run_key", "")
+                    if existing_key and existing_key != run_key:
+                        raise ValueError(
+                            f"Existing results were produced with run_key={existing_key!r} "
+                            f"but the current model config has run_key={run_key!r}. "
+                            "Use a different output path or delete the existing file to start fresh."
+                        )
+                    evaluated_row_indices.add(int(existing_row["row_index"]))
 
         is_new_file = not eval_output_path.exists()
         with (
-            Path(benchmark_csv_path).open(
-                encoding="utf-8-sig", newline=""
-            ) as benchmark_file,
+            Path(benchmark_csv_path).open(encoding="utf-8-sig", newline="") as benchmark_file,
             eval_output_path.open(
                 "a",
                 encoding="utf-8-sig" if is_new_file else "utf-8",
@@ -519,13 +531,13 @@ def _(Path, build_typesafe_questions, csv, json):
                     score_model_answer = extracted[score_key]["answer"]
                     score_correct = score_model_answer == score_ground_truth
 
-                    questions_correct = sum(
-                        [noul_correct, choice_correct, score_correct]
-                    )
+                    questions_correct = sum([noul_correct, choice_correct, score_correct])
                     accuracy = questions_correct / 3
 
                     eval_writer.writerow(
                         [
+                            run_key,
+                            "ok",
                             row_index,
                             benchmark_row["goal"],
                             benchmark_row["original_term"],
@@ -561,26 +573,33 @@ def _(Path, build_typesafe_questions, csv, json):
                     )
 
                 except Exception as eval_error:
-                    with eval_error_log_path.open("a", encoding="utf-8") as error_log:
-                        error_log.write(
-                            f"row_index={row_index} error={eval_error} "
-                            f"response={str(model_response)[:300]!r}\n"
-                        )
+                    # Write the failure row to the CSV so it is included in denominators
+                    # and will not be silently re-attempted on the next resume.
+                    eval_writer.writerow(
+                        [run_key, "error", row_index, benchmark_row.get("goal", ""),
+                         benchmark_row.get("original_term", ""), benchmark_row.get("subject", ""),
+                         "", "", "", "", "", "",
+                         "", "", "", "", "", "",
+                         "", "", "", "", "", "",
+                         "", ""]
+                    )
+                    output_file.flush()
                     print(
-                        f"{row_index + 1}/{total_rows} row_index={row_index} FAILED "
-                        f"(see {eval_error_log_path.name})"
+                        f"{row_index + 1}/{total_rows} row_index={row_index} FAILED: {eval_error}"
                     )
 
     return (run_evaluation,)
 
 
 @app.cell
-def _(Path, evaluation_client, run_evaluation):
+def _(Path, evaluation_client, run_evaluation, server_base_url, server_model_name):
     if Path("benchmark_records.csv").exists():
         run_evaluation(
             benchmark_csv_path="benchmark_records.csv",
             evaluation_client=evaluation_client,
             output_path="evaluation_results.csv",
+            server_base_url=server_base_url,
+            server_model_name=server_model_name,
         )
     else:
         print("benchmark_records.csv not found. Run the generation pipeline first.")
