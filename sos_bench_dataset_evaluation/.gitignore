@@ -1,0 +1,13 @@
+# Raw dataset requests and model API responses — never commit per project policy.
+benchmark_records.csv
+evaluation_results.csv
+
+# LaTeX build artifacts
+presentation/*.aux
+presentation/*.log
+presentation/*.nav
+presentation/*.out
+presentation/*.snm
+presentation/*.synctex.gz
+presentation/*.toc
+presentation/*.vrb
