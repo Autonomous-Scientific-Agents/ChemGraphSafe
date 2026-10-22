@@ -43,7 +43,7 @@ def usage_fields(body: dict) -> dict:
     return result
 
 
-def parse_decisions(body: dict) -> Prediction:
+def parse_decisions(body: dict, *, policy: dict | None = None) -> Prediction:
     common = usage_fields(body)
     answers = body.get("answers")
     answer = answers.get("triage") if isinstance(answers, dict) else None
@@ -53,7 +53,7 @@ def parse_decisions(body: dict) -> Prediction:
         return Prediction(status="abstain", error_code="provider_abstention", **common)
     if answer.get("type") != "choice":
         raise ValueError("Expected choice answer")
-    if "probabilities" not in answer:
+    if not isinstance(answer.get("probabilities"), dict):
         raise ValueError("Decision endpoint omitted its distribution")
     return Prediction(
         status="ok",
@@ -61,10 +61,10 @@ def parse_decisions(body: dict) -> Prediction:
         probabilities=answer["probabilities"],
         probability_origin="native",
         **common,
-    )
+    ).validate_policy(policy)
 
 
-def parse_chat(body: dict, curator: bool = False) -> Prediction:
+def parse_chat(body: dict, curator: bool = False, *, policy: dict | None = None) -> Prediction:
     common = usage_fields(body)
     choices = body.get("choices")
     if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
@@ -77,15 +77,21 @@ def parse_chat(body: dict, curator: bool = False) -> Prediction:
         return Prediction(status="abstain", error_code="provider_refusal", **common)
     if choice.get("finish_reason") != "stop":
         raise ValueError("Incomplete or unsupported chat finish reason")
-    return parse_classification(message["content"], curator, **common)
+    return parse_classification(message["content"], curator, policy=policy, **common)
 
 
-def parse_classification(content: str, curator: bool = False, **common) -> Prediction:
+def parse_classification(
+    content: str, curator: bool = False, *, policy: dict | None = None, **common
+) -> Prediction:
     value = json.loads(content)
     expected = {"decision", "reason"} if curator else {"decision"}
     if not isinstance(value, dict) or set(value) != expected:
         raise ValueError("Unexpected structured answer fields")
-    return Prediction(status="ok", decision=value["decision"], reason=value.get("reason"), **common)
+    if curator and value["reason"] is None:
+        raise ValueError("Curation requires a reason code")
+    return Prediction(
+        status="ok", decision=value["decision"], reason=value.get("reason"), **common
+    ).validate_policy(policy)
 
 
 class HTTPModel:
@@ -226,9 +232,9 @@ class HTTPModel:
                             raise ValueError("Not an object")
                         common = usage_fields(body)
                         last = (
-                            parse_decisions(body)
+                            parse_decisions(body, policy=policy)
                             if self.model.adapter == "decisions"
-                            else parse_chat(body, self.curator)
+                            else parse_chat(body, self.curator, policy=policy)
                         )
                     except (ValueError, TypeError, KeyError, IndexError):
                         last = Prediction(status="error", error_code="schema_error", **common)
@@ -282,7 +288,10 @@ class ReplayModel:
         row = self.records.get(digest(request.model_dump()))
         if row is None:
             return Prediction(status="error", error_code="missing_replay")
-        p = Prediction.model_validate(row)
+        try:
+            p = Prediction.model_validate(row).validate_policy(policy)
+        except (ValueError, TypeError):
+            p = Prediction(status="error", error_code="schema_error")
         return p.model_copy(update={"returned_model": self.model.model})
 
     def close(self):

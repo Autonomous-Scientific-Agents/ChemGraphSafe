@@ -346,7 +346,9 @@ class CodexModel:
                             result = Prediction(status="error", error_code=failure, **common)
                         else:
                             try:
-                                result = parse_classification(content, self.curator, **common)
+                                result = parse_classification(
+                                    content, self.curator, policy=policy, **common
+                                )
                             except (ValueError, TypeError, KeyError):
                                 result = Prediction(
                                     status="error", error_code="schema_error", **common

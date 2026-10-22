@@ -39,12 +39,31 @@ def check_hosted_rights(rows: list[Example]):
         raise ValueError("Hosted processing is not authorized in every example's rights record")
 
 
+def predict_under_policy(adapter, request: Request, policy: dict) -> Prediction:
+    prediction = adapter.predict(request, policy)
+    try:
+        return prediction.validate_policy(policy)
+    except ValueError:
+        # Keep usage/accounting even when an extension adapter violates the policy contract.
+        return prediction.model_copy(
+            update={
+                "status": "error",
+                "decision": None,
+                "reason": None,
+                "probabilities": None,
+                "probability_origin": None,
+                "choice_argmax_mismatch": False,
+                "error_code": "schema_error",
+            }
+        )
+
+
 class ModelLabeler:
     def __init__(self, config: Config, adapter):
         self.config, self.adapter = config, adapter
 
     def annotate(self, example: Example, policy: dict) -> Annotation:
-        prediction = self.adapter.predict(example.request, policy)
+        prediction = predict_under_policy(self.adapter, example.request, policy)
         if prediction.status == "ok" and prediction.reason is None:
             prediction = prediction.model_copy(
                 update={
@@ -81,6 +100,8 @@ def curate(config: Config):
     rows = examples(config)
     check_hosted_rights(rows)
     existing = annotations(config)
+    for annotation in existing.values():
+        annotation.prediction.validate_policy(config.policy)
     curator_hash = digest(config.curator.spec())
     if any(
         a.config_hash != curator_hash or a.policy_hash != digest(config.policy)
@@ -190,6 +211,8 @@ def _run_preflighted(config, rows, split, identity, run_path, ledger, adapters):
         raise ValueError("Predictions exist without their run manifest")
     # Reporting needs local references, but no text or model/curator free text.
     ann = annotations(config) if (config.dataset / "examples.jsonl").exists() else {}
+    for annotation in ann.values():
+        annotation.prediction.validate_policy(config.policy)
     reference = [
         {
             "id": e.id,
@@ -212,6 +235,8 @@ def _run_preflighted(config, rows, split, identity, run_path, ledger, adapters):
         # Preserve creation-time provenance (including the original lockfile hash).
         manifest = old
     old_rows = [PredictionRow.model_validate(r) for r in read_rows(run_path / "predictions.jsonl")]
+    for row in old_rows:
+        row.prediction.validate_policy(config.policy)
     if any(r.run_key != run_key or r.split != split.get(r.example_id) for r in old_rows):
         raise ValueError("Prediction rows do not belong to this run")
     saved = {(r.model_name, r.example_id): r for r in old_rows}
@@ -233,7 +258,7 @@ def _run_preflighted(config, rows, split, identity, run_path, ledger, adapters):
                 prediction = (
                     Prediction(status="error", error_code="not_attempted_" + fatal)
                     if fatal
-                    else adapter.predict(e.request, config.policy)
+                    else predict_under_policy(adapter, e.request, config.policy)
                 )
                 if prediction.error_code in FATAL_CODES:
                     fatal = prediction.error_code

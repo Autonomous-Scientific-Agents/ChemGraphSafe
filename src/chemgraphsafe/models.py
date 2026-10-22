@@ -9,7 +9,16 @@ Decision = Literal["ALLOW", "REVIEW", "BLOCK"]
 Status = Literal["ok", "abstain", "error"]
 Reason = Literal["legitimate_use", "harm_facilitation", "insufficient_context"]
 LABELS = ("ALLOW", "REVIEW", "BLOCK")
+BINARY_LABELS = ("ALLOW", "BLOCK")
 PROTOCOL_VERSION = "triage-1"
+
+
+def policy_labels(policy: dict) -> tuple[str, ...]:
+    """Return a supported label set in canonical order, independent of JSON key order."""
+    criteria = policy.get("criteria")
+    if not isinstance(criteria, dict) or set(criteria) not in (set(LABELS), set(BINARY_LABELS)):
+        raise ValueError("Policy must define ALLOW/BLOCK or ALLOW/REVIEW/BLOCK")
+    return tuple(label for label in LABELS if label in criteria)
 
 
 class Record(BaseModel):
@@ -63,8 +72,12 @@ class Prediction(Record):
             raise ValueError("Only successful decisions may carry a policy label")
         if self.probabilities is not None:
             p = self.probabilities
-            if self.status != "ok" or set(p) != set(LABELS):
-                raise ValueError("A distribution requires a successful three-class decision")
+            if (
+                self.status != "ok"
+                or set(p) not in (set(LABELS), set(BINARY_LABELS))
+                or self.decision not in p
+            ):
+                raise ValueError("A distribution requires a matching two- or three-class decision")
             if any(not math.isfinite(v) or not 0 <= v <= 1 for v in p.values()):
                 raise ValueError("Invalid probability")
             if abs(sum(p.values()) - 1) > 1e-3:
@@ -72,6 +85,22 @@ class Prediction(Record):
             if self.probability_origin is None:
                 raise ValueError("Probability provenance is required")
             self.choice_argmax_mismatch = p[self.decision] < max(p.values())
+        return self
+
+    def validate_policy(self, policy: dict | None = None) -> "Prediction":
+        """Validate the active experiment's label set; omitted policy retains the legacy default."""
+        labels = policy_labels(policy) if policy is not None else LABELS
+        if self.status == "ok":
+            if self.decision not in labels:
+                raise ValueError("Decision is outside the active policy labels")
+            if self.probabilities is not None and set(self.probabilities) != set(labels):
+                raise ValueError("Probability labels differ from the active policy labels")
+            if (
+                policy is not None
+                and self.reason is not None
+                and self.reason not in policy.get("reason_codes", [])
+            ):
+                raise ValueError("Reason is outside the active policy reason codes")
         return self
 
 

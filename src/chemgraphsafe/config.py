@@ -7,7 +7,7 @@ from urllib.parse import urlsplit
 
 from pydantic import Field, model_validator
 
-from .models import Record
+from .models import Record, policy_labels
 from .prompts import codex_prompt_contract
 from .providers import ARGO_ENDPOINT, ARGO_WITHOUT_TEMPERATURE, argo_model, model_identity
 from .storage import digest, read_json
@@ -48,7 +48,7 @@ class ModelConfig(Record):
 
     @model_validator(mode="after")
     def endpoint_safe(self):
-        if self.name in {"always-allow", "always-review"}:
+        if self.name in {"always-allow", "always-review", "always-block"}:
             raise ValueError("Model name is reserved for a diagnostic baseline")
         if self.adapter == "codex":
             if not self.reasoning_effort or self.reasoning_effort != self.reasoning_effort.strip():
@@ -165,8 +165,7 @@ class Config(Record):
     @property
     def policy(self) -> dict:
         p = read_json(self.path(self.policy_file))
-        if set(p.get("criteria", {})) != {"ALLOW", "REVIEW", "BLOCK"}:
-            raise ValueError("Policy must define ALLOW/REVIEW/BLOCK")
+        policy_labels(p)
         return p
 
     def semantic_config(self) -> dict:

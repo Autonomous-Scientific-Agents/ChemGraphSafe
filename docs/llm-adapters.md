@@ -6,6 +6,13 @@ enumerated `reason`. Responses are validated strictly without JSON repair, free-
 storage, or invented confidence. Configs, authentication, and accounting are preflighted for all
 models before the first inference attempt.
 
+`policy_file` selects the allowed decisions for every adapter. The default policy uses
+ALLOW/REVIEW/BLOCK; `policies/triage-binary-v0.1.json` opts into ALLOW/BLOCK with a best-fit
+choice even when context is limited. Jev receives two native choice criteria, and chat, Argo,
+and Codex receive a two-label output schema. Parsing checks the active policy as well as the
+response shape. Binary curators use only `legitimate_use` or `harm_facilitation`. Select new
+data/run directories when switching policies; see [binary evaluation](evaluation.md#binary-policy-option).
+
 ## Hosted Argo
 
 Export `ARGO_USER` as your Argonne username; `.env` is not loaded automatically. Start with

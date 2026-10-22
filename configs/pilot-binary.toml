@@ -1,0 +1,40 @@
+# Opt-in forced binary benchmark; the existing three-way pilot is unchanged.
+project_root = ".."
+policy_file = "policies/triage-binary-v0.1.json"
+run_dir = "runs/pilot-binary-v1"
+offline = false
+
+[data]
+loader = "scihazard"
+directory = ".local/data/pilot-binary-v1"
+revision = "f8809e5af23495e469dfc53e99973f74031fcb11"
+count = 100
+minimum_per_class = 40
+seed = 42
+similarity_threshold = 0.9
+# Enable before preparation to preserve an existing pilot's exact split and ordering:
+# inherited_freeze = ".local/data/pilot-v1/freeze.json"
+
+[budget]
+ledger = ".local/state/pilot-budget.sqlite"
+max_usd = 10.0
+max_attempts = 500
+
+[runner]
+timeout_seconds = 60.0
+retries = 2
+max_retry_after_seconds = 60.0
+
+[[models]]
+name = "jev"
+adapter = "decisions"
+model = "typesafe/jev-1.14"
+endpoint = "https://openrouter.ai/api/alpha/decisions"
+api_key_env = "OPENROUTER_API_KEY"
+# Same checked prices as the original pilot; re-check before spending.
+pricing_checked = "2026-10-19"
+input_usd_per_million = 0.042
+output_usd_per_million = 0.0
+reservation_usd = 0.01
+max_input_bytes = 32000
+max_output_tokens = 256
