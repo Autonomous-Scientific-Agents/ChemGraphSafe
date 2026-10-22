@@ -47,6 +47,12 @@ def freeze(config: Annotated[Path, typer.Option(exists=True)]):
     execute(data.freeze, config)
 
 
+@data_app.command("annotate")
+def annotate(config: Annotated[Path, typer.Option(exists=True)]):
+    """Create rule-derived references locally, without model inference."""
+    execute(data.annotate, config)
+
+
 @app.command()
 def curate(config: Annotated[Path, typer.Option(exists=True)]):
     execute(runner.curate, config)

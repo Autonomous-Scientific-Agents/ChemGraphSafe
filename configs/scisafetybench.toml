@@ -1,0 +1,38 @@
+project_root = ".."
+policy_file = "policies/triage-chem-materials-oversight-v0.1.json"
+annotation_rule = "scisafetybench-risk-v1"
+run_dir = "runs/scisafetybench-chem-materials-v1"
+offline = false
+
+[data]
+loader = "scisafetybench"
+protocol = "challenge_eval"
+directory = ".local/data/scisafetybench-chem-materials-v1"
+revision = "9db8659086fc7acc0be02f8087b189e6585cf1ea"
+count = 80
+seed = 42
+similarity_threshold = 0.9
+
+[budget]
+ledger = ".local/state/pilot-budget.sqlite"
+max_usd = 10.0
+max_attempts = 500
+
+[runner]
+timeout_seconds = 60.0
+retries = 2
+max_retry_after_seconds = 60.0
+
+[[models]]
+name = "jev"
+adapter = "decisions"
+model = "typesafe/jev-1.14"
+endpoint = "https://openrouter.ai/api/alpha/decisions"
+api_key_env = "OPENROUTER_API_KEY"
+# Same pricing snapshot as pilot.toml; re-check rates before live inference.
+pricing_checked = "2026-10-19"
+input_usd_per_million = 0.042
+output_usd_per_million = 0.0
+reservation_usd = 0.01
+max_input_bytes = 32000
+max_output_tokens = 256

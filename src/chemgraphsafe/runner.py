@@ -92,6 +92,8 @@ class ModelLabeler:
 
 def curate(config: Config):
     ensure_unfrozen(config)
+    if config.annotation_rule:
+        raise ValueError("Use data annotate for configured rule-derived references")
     if config.curator is None:
         raise ValueError("No curator configured; source-only freeze is supported")
     prepared = read_json(config.dataset / "prepare.json")
@@ -104,7 +106,9 @@ def curate(config: Config):
         annotation.prediction.validate_policy(config.policy)
     curator_hash = digest(config.curator.spec())
     if any(
-        a.config_hash != curator_hash or a.policy_hash != digest(config.policy)
+        not isinstance(a, Annotation)
+        or a.config_hash != curator_hash
+        or a.policy_hash != digest(config.policy)
         for a in existing.values()
     ):
         raise ValueError("Curation configuration changed; create a new version")
@@ -218,6 +222,7 @@ def _run_preflighted(config, rows, split, identity, run_path, ledger, adapters):
             "id": e.id,
             "source_label": e.source_label,
             "source": e.source,
+            "domain": e.domain,
             "category_id": digest(e.category)[:12],
             "group": e.group,
             "split": split[e.id],

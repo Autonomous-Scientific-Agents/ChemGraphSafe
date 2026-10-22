@@ -14,7 +14,8 @@ from .storage import digest, read_json
 
 
 class DataConfig(Record):
-    loader: Literal["scihazard", "fixture"] = "scihazard"
+    loader: Literal["scihazard", "scisafetybench", "fixture"] = "scihazard"
+    protocol: Literal["balanced_pilot", "challenge_eval"] = "balanced_pilot"
     directory: str = ".local/data/pilot-v1"
     fixture: str = "fixtures/examples.jsonl"
     revision: str = "f8809e5af23495e469dfc53e99973f74031fcb11"
@@ -23,6 +24,20 @@ class DataConfig(Record):
     seed: int = 42
     similarity_threshold: float = Field(default=0.9, gt=0, le=1)
     inherited_freeze: str | None = None
+
+    @model_validator(mode="after")
+    def compatible_protocol(self):
+        if self.loader == "scisafetybench" and self.protocol != "challenge_eval":
+            raise ValueError("SciSafetyBench requires challenge_eval")
+        if self.loader == "scihazard" and self.protocol != "balanced_pilot":
+            raise ValueError("SciHazard requires balanced_pilot")
+        return self
+
+    def spec(self) -> dict:
+        result = self.model_dump()
+        if self.protocol == "balanced_pilot":
+            result.pop("protocol")
+        return result
 
 
 class ModelConfig(Record):
@@ -129,12 +144,15 @@ class Config(Record):
     data: DataConfig = Field(default_factory=DataConfig)
     models: list[ModelConfig]
     curator: ModelConfig | None = None
+    annotation_rule: Literal["scisafetybench-risk-v1"] | None = None
     budget: BudgetConfig = Field(default_factory=BudgetConfig)
     runner: RunnerConfig = Field(default_factory=RunnerConfig)
     root: Path = Field(default=Path("."), exclude=True)
 
     @model_validator(mode="after")
     def distinct(self):
+        if self.annotation_rule and (self.curator or self.data.protocol != "challenge_eval"):
+            raise ValueError("Rule annotations require challenge_eval without a curator")
         names = [m.name for m in self.models]
         if len(names) != len(set(names)) or not names:
             raise ValueError("Provide uniquely named models")
@@ -182,6 +200,12 @@ class Config(Record):
             contracts["curation"] = codex_prompt_contract(self.policy, curator=True)
         if contracts:
             result["codex_prompt_contracts"] = contracts
+        if self.data.protocol != "balanced_pilot":
+            result["data_protocol"] = self.data.protocol
+        if self.annotation_rule:
+            from .scisafetybench import rule_spec
+
+            result["annotation_rule"] = rule_spec(self.annotation_rule, self.policy)
         return result
 
     def semantic_hash(self) -> str:

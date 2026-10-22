@@ -1,5 +1,29 @@
 # Local verification
 
+## SciSafetyBench integration — 2026-10-22
+
+- Locked development sync, Ruff lint/format checks, and the full offline suite passed:
+  **206 passed, 3 skipped** (optional SDK contracts without the optional SDK installed).
+- Real pinned import: both file SHA256 values matched; 40 Chemistry + 40 Materials Science
+  prompts, no exact duplicates/conflicts, and 80 singleton groups at cosine >=0.9.
+- Offline `data annotate` generated **37 BLOCK / 43 REVIEW** provisional rule references.
+  All 80 were frozen into evaluation under the shared oversight policy. No native binary
+  labels or ALLOW references were invented.
+- Offline CLI `evaluate` and `report` passed in fresh local verification directories:
+  10 owned examples, 9 replayed decisions, and 1 abstention. Existing artifacts were preserved.
+- Existing offline and SciHazard pilot freezes passed compatibility checks. Regression tests
+  also cover reading reports without domain metadata and verifying a freeze after the original
+  fixture source is removed.
+- No live Jev smoke/evaluation or LLM curation was run. Downloads, annotations, the new freeze,
+  and replay artifacts remain ignored. Test sources are owned harmless examples; provider
+  requests use mock HTTP.
+
+SciSafetyBench examples SHA256: `2dcf3d76e5d0bda345f44c3c23e81038ae72e7dd4f2e80d52eba6126c1fe09b1`.
+Split/order hash: `0672af1b69837de6d6b299458fa5e943fbc4b61674c7ecd86b1e407fd4e14239`.
+See [the dataset contract](scisafetybench-loader.md) for source pins, mapping, and commands.
+
+## Original pilot verification — 2026-10-19
+
 Verified on macOS with Python 3.12.11 on 2026-10-19.
 
 - Locked installation: `uv sync --locked --extra dev` passed (32 resolved packages).

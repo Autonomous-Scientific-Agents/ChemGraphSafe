@@ -11,7 +11,9 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
 from .config import Config
-from .models import PROTOCOL_VERSION, Annotation, Example, Request
+from .models import PROTOCOL_VERSION, Annotation, Example, Request, RuleAnnotation, parse_annotation
+from .scisafetybench import SOURCE_FILES as SCISAFETYBENCH_FILES
+from .scisafetybench import SciSafetyBenchLoader, rule_annotation
 from .storage import code_hash, digest, file_hash, read_json, read_rows, write_json, write_rows
 
 SOURCE_REPO = "AI45Lab/DeepSafe-Sci"
@@ -95,7 +97,11 @@ class FixtureLoader:
         return [Example.model_validate(r) for r in read_rows(config.path(config.data.fixture))]
 
 
-DATASET_LOADERS = {"scihazard": SciHazardLoader, "fixture": FixtureLoader}
+DATASET_LOADERS = {
+    "scihazard": SciHazardLoader,
+    "scisafetybench": SciSafetyBenchLoader,
+    "fixture": FixtureLoader,
+}
 
 
 def deduplicate_and_group(examples: list[Example], threshold: float):
@@ -173,6 +179,8 @@ def deduplicate_and_group(examples: list[Example], threshold: float):
 
 
 def select_pilot(pool: list[Example], count: int, minimum: int, seed: int) -> list[Example]:
+    if any(e.source_label is None for e in pool):
+        raise ValueError("Balanced pilot requires binary source labels for every case")
     rng = random.Random(seed)
     groups = defaultdict(list)
     for e in pool:
@@ -210,12 +218,31 @@ def ensure_unfrozen(config: Config):
         raise ValueError("Dataset is frozen; use an explicit new dataset version")
 
 
+def preparation_spec(config: Config) -> dict:
+    spec = config.data.spec()
+    if config.data.loader == "fixture":
+        spec["fixture_hash"] = file_hash(config.path(config.data.fixture))
+    return spec
+
+
+def verify_preparation(config: Config) -> dict:
+    prepared = read_json(config.dataset / "prepare.json")
+    # Frozen/prepared examples are self-contained; don't require the original fixture file.
+    spec = prepared["preparation"]
+    if (
+        prepared["preparation_hash"] != digest(spec)
+        or {k: v for k, v in spec.items() if k != "fixture_hash"} != config.data.spec()
+    ):
+        raise ValueError("Preparation changed; use a new dataset directory")
+    if file_hash(config.dataset / "examples.jsonl") != prepared["examples_hash"]:
+        raise ValueError("Prepared examples changed")
+    return prepared
+
+
 def prepare(config: Config):
     ensure_unfrozen(config)
     manifest_path = config.dataset / "prepare.json"
-    spec = config.data.model_dump()
-    if config.data.loader == "fixture":
-        spec["fixture_hash"] = file_hash(config.path(config.data.fixture))
+    spec = preparation_spec(config)
     if manifest_path.exists():
         old = read_json(manifest_path)
         if old["preparation_hash"] != digest(spec):
@@ -229,9 +256,26 @@ def prepare(config: Config):
         DATASET_LOADERS[config.data.loader]().load(config), config.data.similarity_threshold
     )
     write_json(config.dataset / "feasibility.json", stats)
-    selected = select_pilot(
-        pool, config.data.count, config.data.minimum_per_class, config.data.seed
-    )
+    if config.data.protocol == "challenge_eval":
+        if (
+            stats["exact_duplicates_removed"]
+            or stats["quarantined_ids"]
+            or stats["native_conflict_ids"]
+        ):
+            raise ValueError("Challenge data has duplicates or conflicts; no cases may be dropped")
+        if len(pool) != config.data.count:
+            raise ValueError("Challenge count differs from the complete prepared pool")
+        selected = sorted(pool, key=lambda e: e.id)
+        random.Random(config.data.seed).shuffle(selected)
+        stats["cross_domain_groups"] = sum(
+            len({e.domain for e in selected if e.group == group}) > 1
+            for group in {e.group for e in selected}
+        )
+        write_json(config.dataset / "feasibility.json", stats)
+    else:
+        selected = select_pilot(
+            pool, config.data.count, config.data.minimum_per_class, config.data.seed
+        )
     write_rows(config.dataset / "examples.jsonl", [e.model_dump() for e in selected])
     result = {
         "preparation_hash": digest(spec),
@@ -240,11 +284,19 @@ def prepare(config: Config):
         "examples_hash": file_hash(config.dataset / "examples.jsonl"),
         "selected_count": len(selected),
         "selected_groups": len({e.group for e in selected}),
-        "classes": dict(Counter(e.source_label for e in selected)),
-        "source_checksums": SOURCE_FILES if config.data.loader == "scihazard" else {},
+        "classes": dict(Counter(e.source_label for e in selected if e.source_label is not None)),
+        "source_checksums": SOURCE_FILES
+        if config.data.loader == "scihazard"
+        else SCISAFETYBENCH_FILES
+        if config.data.loader == "scisafetybench"
+        else {},
         "source_revision": config.data.revision,
         "mock": config.offline,
     }
+    if config.data.protocol == "challenge_eval":
+        result["unlabeled_count"] = sum(e.source_label is None for e in selected)
+        result["domains"] = dict(Counter(e.domain for e in selected))
+        result["risk_categories"] = dict(Counter(e.category for e in selected))
     write_json(manifest_path, result)
     return result
 
@@ -253,18 +305,38 @@ def examples(config: Config) -> list[Example]:
     return [Example.model_validate(r) for r in read_rows(config.dataset / "examples.jsonl")]
 
 
-def annotations(config: Config) -> dict[str, Annotation]:
-    rows = [Annotation.model_validate(r) for r in read_rows(config.dataset / "annotations.jsonl")]
+def annotations(config: Config) -> dict[str, Annotation | RuleAnnotation]:
+    rows = [parse_annotation(r) for r in read_rows(config.dataset / "annotations.jsonl")]
     if len({r.example_id for r in rows}) != len(rows):
         raise ValueError("Duplicate annotation IDs")
     return {r.example_id: r for r in rows}
 
 
+def annotate(config: Config):
+    """Deterministic, offline-only reference generation; never invokes a provider."""
+    ensure_unfrozen(config)
+    if not config.annotation_rule or config.curator:
+        raise ValueError("Configure an annotation_rule without a curator")
+    verify_preparation(config)
+    rows = examples(config)
+    generated = [rule_annotation(e, config.annotation_rule, config.policy) for e in rows]
+    expected = {a.example_id: a for a in generated}
+    existing = annotations(config)
+    if existing and existing != expected:
+        raise ValueError("Existing annotations differ; use a new dataset directory")
+    if not existing:
+        write_rows(config.dataset / "annotations.jsonl", [a.model_dump() for a in generated])
+    return {
+        "annotations": len(generated),
+        "origin": "rule_derived",
+        "rule_id": config.annotation_rule,
+        "classes": dict(Counter(a.prediction.decision for a in generated)),
+    }
+
+
 def freeze(config: Config):
     ensure_unfrozen(config)
-    prepared = read_json(config.dataset / "prepare.json")
-    if file_hash(config.dataset / "examples.jsonl") != prepared["examples_hash"]:
-        raise ValueError("Prepared examples changed")
+    prepared = verify_preparation(config)
     rows = examples(config)
     if not rows:
         raise ValueError("No prepared examples")
@@ -275,10 +347,15 @@ def freeze(config: Config):
         raise ValueError("Annotation IDs outside dataset")
     if any(a.policy_hash != digest(config.policy) for a in ann.values()):
         raise ValueError("Annotations refer to a different policy")
-    if ann and (
+    if config.annotation_rule:
+        expected = {e.id: rule_annotation(e, config.annotation_rule, config.policy) for e in rows}
+        if ann != expected:
+            raise ValueError("Rule annotations require complete, exact coverage; run data annotate")
+    elif ann and (
         config.curator is None
         or any(
-            a.config_hash != digest(config.curator.spec())
+            not isinstance(a, Annotation)
+            or a.config_hash != digest(config.curator.spec())
             or a.requested_model != config.curator.model
             for a in ann.values()
         )
@@ -286,13 +363,18 @@ def freeze(config: Config):
         raise ValueError("Annotations refer to a different curator configuration")
     rng = random.Random(config.data.seed)
     splits = {}
-    for label in ("benign", "harmful"):
-        ids = sorted(e.id for e in rows if e.source_label == label)
-        rng.shuffle(ids)
-        n = max(1, round(len(ids) * 0.2))
-        if n >= len(ids):
-            raise ValueError("Both classes must occur in dev and evaluation")
-        splits.update({id_: "dev" if i < n else "eval" for i, id_ in enumerate(ids)})
+    if config.data.protocol == "challenge_eval":
+        splits = {e.id: "eval" for e in rows}
+    else:
+        if any(e.source_label is None for e in rows):
+            raise ValueError("Balanced pilot requires binary source labels for every case")
+        for label in ("benign", "harmful"):
+            ids = sorted(e.id for e in rows if e.source_label == label)
+            rng.shuffle(ids)
+            n = max(1, round(len(ids) * 0.2))
+            if n >= len(ids):
+                raise ValueError("Both classes must occur in dev and evaluation")
+            splits.update({id_: "dev" if i < n else "eval" for i, id_ in enumerate(ids)})
     order = sorted(e.id for e in rows)
     rng.shuffle(order)
     split_manifest = {"splits": splits, "case_order": order}
@@ -310,7 +392,8 @@ def freeze(config: Config):
             len(split_manifest["case_order"]) != len(order)
             or set(split_manifest["case_order"]) != set(order)
             or set(split_manifest["splits"]) != set(order)
-            or set(split_manifest["splits"].values()) != {"dev", "eval"}
+            or set(split_manifest["splits"].values())
+            != ({"eval"} if config.data.protocol == "challenge_eval" else {"dev", "eval"})
         ):
             raise ValueError("Inherited case IDs differ")
     split_groups = defaultdict(set)
@@ -351,4 +434,5 @@ def verify_freeze(config: Config):
         raise ValueError("Frozen annotations changed (including previously absent annotations)")
     if result["semantic_hash"] != config.semantic_hash() or result["protocol"] != PROTOCOL_VERSION:
         raise ValueError("Frozen policy/model/protocol changed; create a new version")
+    verify_preparation(config)
     return result
