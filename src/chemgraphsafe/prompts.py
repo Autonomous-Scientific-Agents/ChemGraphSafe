@@ -1,6 +1,6 @@
 """Classification instructions shared by HTTP and Codex, without transport roles."""
 
-from .models import LABELS, Request
+from .models import Request, policy_labels
 from .storage import canonical, digest
 
 CODEX_BASE_INSTRUCTIONS = (
@@ -13,7 +13,7 @@ REQUEST_ENVELOPE = "untrusted_request"
 
 
 def classification_schema(policy: dict, curator: bool = False) -> dict:
-    properties = {"decision": {"type": "string", "enum": list(LABELS)}}
+    properties = {"decision": {"type": "string", "enum": list(policy_labels(policy))}}
     if curator:
         properties["reason"] = {"type": "string", "enum": policy["reason_codes"]}
     return {

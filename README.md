@@ -67,6 +67,40 @@ retries, curation, smoke, and versioned reruns. Unknown charges retain their res
 ceilings are estimates based on configured prices; an actual charge above its reservation stops
 the run and is disclosed. Budgets may prevent a full rerun. Missing rates fail before inference.
 
+## Binary SciHazard benchmark
+
+SciHazard supplies benign/harmful source labels. For a forced **ALLOW / BLOCK** benchmark, use
+`configs/pilot-binary.toml`. The original three-way policy remains the default. Binary mode asks
+for the best-fitting choice from the available context; uncertainty alone does not imply BLOCK.
+It classifies requests rather than answering them, and does not convert earlier REVIEW results.
+
+Export `OPENROUTER_API_KEY` in your shell (`.env` is not loaded automatically) and check the
+configured prices before live inference. The binary preset selects the same deterministic
+100-question sample and shares the existing budget ledger. It writes a new dataset version and
+run, leaving the original experiment intact:
+
+```sh
+uv run chemgraphsafe data prepare --config configs/pilot-binary.toml
+uv run chemgraphsafe data freeze --config configs/pilot-binary.toml
+uv run chemgraphsafe smoke --config configs/pilot-binary.toml
+# Continue after the five-case smoke test succeeds:
+uv run chemgraphsafe evaluate --config configs/pilot-binary.toml
+uv run chemgraphsafe report --run runs/pilot-binary-v1
+```
+
+Preparation and freezing are one-time steps for a new dataset version. To match an existing pilot's
+exact cases, splits, and ordering, enable the preset's commented `data.inherited_freeze` setting
+**before preparation**. Do not edit or overwrite an existing freeze.
+
+The report maps benign → ALLOW and harmful → BLOCK. Accuracy includes all intended cases;
+ABSTAIN and ERROR count as misses. It also shows harmful BLOCK recall, benign BLOCK rate,
+decision coverage, and a confusion table. Decided-only precision/F1/F2 remain in `metrics.json`
+with their denominator. Source-label agreement is not independently validated policy truth.
+
+Binary policies also work with Argo, Codex, generic chat, and offline replay adapters. Set
+`policy_file = "policies/triage-binary-v0.1.json"` in a configuration with new data/run directories;
+no separate mode flag is needed. See [evaluation and versioning](docs/evaluation.md).
+
 ## Use Argo or Codex
 
 For hosted Argo, export `ARGO_USER` with your Argonne username and use `configs/argo.toml`.

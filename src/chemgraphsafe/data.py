@@ -269,6 +269,8 @@ def freeze(config: Config):
     if not rows:
         raise ValueError("No prepared examples")
     ann = annotations(config)
+    for annotation in ann.values():
+        annotation.prediction.validate_policy(config.policy)
     if set(ann) - {e.id for e in rows}:
         raise ValueError("Annotation IDs outside dataset")
     if any(a.policy_hash != digest(config.policy) for a in ann.values()):
