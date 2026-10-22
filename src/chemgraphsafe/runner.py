@@ -21,6 +21,7 @@ from .rights import check_hosted_rights, check_rights_evidence
 from .storage import code_hash, digest, file_hash, read_json, read_rows, write_json, write_rows
 
 FATAL_CODES = {
+    "local_identity_changed",
     "budget_exhausted",
     "reservation_overrun",
     "http_401",

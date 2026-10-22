@@ -14,6 +14,15 @@ from .providers import ARGO_ENDPOINT, ARGO_WITHOUT_TEMPERATURE, argo_model, mode
 from .storage import digest, read_json
 
 
+class KevServingConfig(Record):
+    revision: str = Field(pattern=r"^[0-9a-f]{40}$")
+    runtime_revision: str = Field(pattern=r"^[0-9a-f]{40}$")
+    device: str = Field(default="cpu", pattern=r"^(cpu|mps|cuda(:[0-9]+)?)$")
+    base_model: str = Field(min_length=1)
+    dtype: Literal["float32", "bfloat16", "float16"] = "float32"
+    calibration_temperature: float = Field(gt=0)
+
+
 class DataConfig(Record):
     loader: Literal["scihazard", "scisafetybench", "fixture"] = "scihazard"
     protocol: Literal["balanced_pilot", "challenge_eval"] = "balanced_pilot"
@@ -43,7 +52,7 @@ class DataConfig(Record):
 
 class ModelConfig(Record):
     name: str = Field(pattern=r"^[a-zA-Z0-9_-]+$")
-    adapter: Literal["decisions", "chat", "replay", "argo", "codex", "laya"]
+    adapter: Literal["decisions", "chat", "replay", "argo", "codex", "laya", "kev"]
     model: str = Field(min_length=1)
     endpoint: str = ""
     identity_endpoint: str = ""
@@ -63,11 +72,32 @@ class ModelConfig(Record):
     temperature: float | None = None
     seed: int | None = None
     reasoning_effort: str | None = None
+    local: KevServingConfig | None = None
 
     @model_validator(mode="after")
     def endpoint_safe(self):
         if self.name in {"always-allow", "always-review", "always-block"}:
             raise ValueError("Model name is reserved for a diagnostic baseline")
+        if self.adapter == "kev":
+            u = urlsplit(self.endpoint)
+            if (
+                u.scheme != "http"
+                or u.hostname not in {"127.0.0.1", "::1"}
+                or u.username is not None
+                or u.password is not None
+                or u.query
+                or u.fragment
+                or u.path != "/v1/systemone"
+            ):
+                raise ValueError("Kev requires a literal loopback HTTP /v1/systemone URL")
+            if self.local is None or self.budget_mode != "attempts_only":
+                raise ValueError("Kev requires pinned local settings and attempts_only")
+            if self.temperature is not None or self.seed is not None:
+                raise ValueError("Kev does not support generation temperature/seed")
+            if not self.model.strip() or self.model != self.model.strip() or "@" in self.model:
+                raise ValueError("Use a repository ID in model and a separate local revision")
+        elif self.local is not None:
+            raise ValueError("Local settings are supported only by Kev")
         if self.adapter == "codex":
             if not self.reasoning_effort or self.reasoning_effort != self.reasoning_effort.strip():
                 raise ValueError("Codex requires an explicit nonempty reasoning_effort")
@@ -163,7 +193,7 @@ class ModelConfig(Record):
 
     @property
     def processing_location(self) -> Literal["local", "hosted"]:
-        if self.adapter == "replay":
+        if self.adapter in {"replay", "kev"}:
             return "local"
         if self.adapter == "laya":
             endpoints = (urlsplit(self.endpoint), urlsplit(self.identity_endpoint))
@@ -177,6 +207,8 @@ class ModelConfig(Record):
     def spec(self) -> dict:
         """Keep legacy semantic hashes stable when new provider options are unused."""
         result = self.model_dump()
+        if self.local is None:
+            result.pop("local")
         if self.adapter != "codex":
             result.pop("reasoning_effort")
         if self.adapter != "argo":

@@ -148,6 +148,12 @@ seeded case order. Three-way policy metrics are unavailable until the separate a
 Raw source answers and reasoning are never sent to classifiers. Source labels are references,
 not a claim of independently validated ChemGraphSafe ground truth.
 
+## Local Kev decisions
+
+The [Kev adapter](docs/kev-adapter.md) connects to a separately managed, pinned loopback server.
+Use `configs/kev-local.toml` for setup. It shares the attempt ledger and records runtime provenance.
+No model installation or startup occurs in the adapter. Native probabilities do not establish chemistry calibration.
+
 ## Run Jev when credentials are available
 
 Set `OPENROUTER_API_KEY` locally, verify the prices in `configs/pilot.toml`, then:

@@ -15,6 +15,7 @@ Keep changes scoped to one loader, adapter, metric, or curation improvement.
   in `build_model`, and extend `ModelConfig.adapter`. Only request text/context reaches a model.
   Argo shares the HTTP transport; `codex.py` lazily loads the optional SDK. See
   [LLM adapter setup](docs/llm-adapters.md) for their authentication and accounting contracts.
+  Local Kev reuses the HTTP transport in `kev.py`; see [its setup contract](docs/kev-adapter.md).
 - `prompts.py` holds shared classification instructions and Codex's freeze-level prompt
   fingerprint. `provenance.py` collects installed runtime dependencies without dev extras.
   Codex constructors expose `runtime_provenance` after no-inference preflight. The runner binds
