@@ -37,9 +37,11 @@ CI uses harmless fixtures and mock HTTP only. Keep keys in your shell environmen
 is documentation, and the program does not automatically load `.env` files.
 
 For Codex changes, also run `uv sync --locked --extra dev --extra codex` followed by
-`uv run --extra codex pytest -q tests/test_codex_adapter.py`. This exercises the pinned SDK's
+`uv run --extra codex pytest -q tests/test_codex_adapter.py`. This exercises the locked SDK's
 actual notification types without launching its runtime or making inference requests. The rest
 of the Codex tests use an async fake SDK and also run without the optional dependency installed.
+For dependency updates, follow the [SDK upgrade workflow](docs/llm-adapters.md#codex-subscription)
+and retain the tested SDK/runtime versions in `uv.lock`.
 
 Do not commit raw downloads, annotations, request text from safety datasets, API responses, or
 local run directories. Share aggregate results and ID-only errors after checking source terms.

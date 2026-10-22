@@ -13,8 +13,8 @@ dependencies = ["httpx>=0.27,<1", "pydantic>=2.9,<3", "typer>=0.12,<1", "numpy>=
 
 [project.optional-dependencies]
 dev = ["pytest>=8,<10", "ruff>=0.8,<1"]
-# Matches ChemGraph's SDK notification contract; update its contract tests before upgrading.
-codex = ["openai-codex==0.144.4"]
+# Allow SDK/runtime upgrades; uv.lock records the pair verified by the contract tests.
+codex = ["openai-codex>=0.163.0,<1"]
 
 [project.scripts]
 chemgraphsafe = "chemgraphsafe.cli:app"

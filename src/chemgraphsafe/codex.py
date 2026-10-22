@@ -1,4 +1,4 @@
-"""Subscription-backed classification using ChemGraph's pinned Codex SDK contract."""
+"""Subscription-backed classification using the optional Codex SDK."""
 
 import asyncio
 import importlib
@@ -83,7 +83,7 @@ def load_sdk():
     try:
         return importlib.import_module("openai_codex")
     except ImportError:
-        raise ValueError("Codex requires `uv sync --extra codex` (openai-codex==0.144.4)") from None
+        raise ValueError("Codex requires `uv sync --locked --extra codex`") from None
 
 
 def plain(value):
@@ -338,9 +338,8 @@ class CodexModel:
                             approval_mode=self.sdk.ApprovalMode.deny_all,
                             sandbox=self.sdk.Sandbox.read_only,
                         )
-                        # The SDK waits on a thread-backed queue. Cancelling its stream first
-                        # unregisters that queue, stranding the worker during asyncio shutdown.
-                        # Keep it registered until interruption/runtime closure wakes the reader.
+                        # The SDK reads notifications on a worker thread. Keep its stream alive
+                        # until interruption/runtime closure releases pending notification reads.
                         consumer = asyncio.create_task(consume(turn, common))
                         content, failure = await asyncio.shield(consumer)
                         if failure:

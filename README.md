@@ -76,7 +76,9 @@ For Codex, install `uv sync --locked --extra dev --extra codex`, establish a Cha
 `codex login`, and replace the model placeholder in `configs/codex.toml` with an account-supported
 model ID. Set `reasoning_effort` explicitly for each Codex model; preflight checks model/effort
 support without starting an inference turn. The SDK bundles its runtime; the CLI is needed only
-if you use it to establish login. Existing Codex experiments require new data/run directories
+if you use it to establish login. The SDK accepts newer releases within its configured version
+range; `uv.lock` records the tested SDK/runtime pair. See [SDK upgrades](docs/llm-adapters.md#codex-subscription)
+before updating it. Existing Codex experiments require new data/run directories
 for the corrected prompt contract; see [evaluation versioning](docs/evaluation.md).
 
 ```sh

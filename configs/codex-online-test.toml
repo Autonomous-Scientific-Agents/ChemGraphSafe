@@ -1,0 +1,29 @@
+# Five harmless live smoke cases; no dataset preparation or freezing is required.
+# Use a new run directory when changing execution settings or repeating fresh calls.
+project_root = ".."
+policy_file = "policies/triage-v0.1.json"
+run_dir = "runs/codex-pr3-online-v1"
+offline = false
+
+[data]
+directory = ".local/data/codex-pr3-online-v1"
+
+[budget]
+# Keep the existing shared ledger across live tests and versioned reruns.
+ledger = ".local/state/pilot-budget.sqlite"
+max_usd = 10.0
+max_attempts = 500
+
+[runner]
+timeout_seconds = 60.0
+retries = 0
+max_retry_after_seconds = 60.0
+
+[[models]]
+name = "codex-baseline"
+adapter = "codex"
+# Explicit Sol baseline; live preflight checks model and effort availability.
+model = "codex:gpt-5.6-sol"
+reasoning_effort = "medium"
+budget_mode = "attempts_only"
+max_input_bytes = 32000

@@ -31,7 +31,7 @@ def fake_codex(monkeypatch):
         efforts=["low", "medium", "high"],
         effective={"model_reasoning_effort": "high", "model_verbosity": "medium"},
         started_overrides={},
-        runtime_version="0.144.4",
+        runtime_version="0.163.0",
         catalog_pages=None,
     )
 
@@ -174,7 +174,7 @@ def fake_codex(monkeypatch):
             state.closed += 1
 
     sdk = SimpleNamespace(
-        __version__="0.144.4",
+        __version__="0.163.0",
         AsyncCodex=AsyncCodex,
         AsyncThread=Thread,
         CodexConfig=lambda **kw: SimpleNamespace(**kw),

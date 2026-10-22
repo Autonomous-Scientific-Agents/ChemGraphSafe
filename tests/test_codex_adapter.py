@@ -93,7 +93,7 @@ def test_codex_missing_sdk_is_actionable(monkeypatch):
         raise ImportError(name)
 
     monkeypatch.setattr(codex.importlib, "import_module", missing)
-    with pytest.raises(ValueError, match="uv sync --extra codex"):
+    with pytest.raises(ValueError, match="uv sync --locked --extra codex"):
         codex.load_sdk()
 
 
@@ -337,7 +337,7 @@ def test_codex_request_never_enters_trusted_instructions(config, fake_codex, cur
     assert json.loads(fake_codex.turns[-1][0]) == {"untrusted_request": request.model_dump()}
 
 
-def test_real_pinned_sdk_notification_contract():
+def test_real_sdk_notification_contract():
     sdk = pytest.importorskip("openai_codex.generated.v2_all")
     common = {}
     counts = {
@@ -425,11 +425,12 @@ def test_real_sdk_serializes_trusted_policy_and_request_in_separate_fields(confi
                     "sandbox": {"type": "readOnly"},
                     "thread": {
                         "id": "thread",
-                        "cliVersion": "0.144.4",
+                        "cliVersion": sdk.__version__,
                         "createdAt": 0,
                         "updatedAt": 0,
                         "cwd": cwd,
                         "ephemeral": True,
+                        "historyMode": "legacy",
                         "modelProvider": "openai",
                         "preview": "",
                         "sessionId": "session",
@@ -486,26 +487,22 @@ def test_real_sdk_serializes_trusted_policy_and_request_in_separate_fields(confi
     assert config.policy["instructions"] not in turn["input"][0]["text"]
 
 
-def test_real_sdk_blocking_reader_is_released_before_stream_unregister(config, monkeypatch):
-    """Exercise the SDK's actual thread-backed queue without starting a runtime."""
+def test_real_sdk_blocking_reader_is_released_on_timeout(config, monkeypatch):
+    """Exercise the SDK's actual notification subscription without starting a runtime."""
+    from threading import Event
+
     sdk = pytest.importorskip("openai_codex")
     from openai_codex.async_client import AsyncCodexClient
 
     from chemgraphsafe import codex
 
-    registered_at_close = []
+    subscribed_at_close, subscriptions, interrupted = [], [], []
+    reader_started, reader_finished = Event(), Event()
 
     class Client:
         def __init__(self, config):
             self._client = AsyncCodexClient(config=config)
-            self.waiting_queue = None
-            original_next = self._client._sync.next_turn_notification
-
-            def next_notification(turn_id):
-                self.waiting_queue = self._client._sync._router._turn_notifications[turn_id]
-                return original_next(turn_id)
-
-            self._client._sync.next_turn_notification = next_notification
+            self.subscription = None
 
             async def request(method, params, **kwargs):
                 if method == "model/list":
@@ -529,13 +526,31 @@ def test_real_sdk_blocking_reader_is_released_before_stream_unregister(config, m
                 }
 
             async def turn(*args, **kwargs):
-                return SimpleNamespace(turn=SimpleNamespace(id="turn"))
+                subscription = self._client._subscribe_turn_notifications("turn")
+                self.subscription = subscription
+                subscriptions.append(subscription)
+                original_next = subscription.next
+
+                def next_notification():
+                    reader_started.set()
+                    try:
+                        return original_next()
+                    finally:
+                        reader_finished.set()
+
+                subscription.next = next_notification
+                return SimpleNamespace(turn=SimpleNamespace(id="turn")), subscription
+
+            async def interrupt(thread_id, turn_id):
+                interrupted.append((thread_id, turn_id))
+                return {}
 
             self._client.request = request
             self._client.thread_start = start
-            self._client.turn_start = turn
+            self._client._start_turn = turn
+            self._client.turn_interrupt = interrupt
 
-        metadata = {"serverInfo": {"name": "codex", "version": "0.144.4"}}
+        metadata = {"serverInfo": {"name": "codex", "version": sdk.__version__}}
 
         async def _ensure_initialized(self):
             pass
@@ -548,10 +563,8 @@ def test_real_sdk_blocking_reader_is_released_before_stream_unregister(config, m
 
         async def close(self):
             router = self._client._sync._router
-            if self.waiting_queue is not None:
-                registered_at_close.append("turn" in router._turn_notifications)
-                # Release even an orphaned queue, so a regression fails rather than hangs pytest.
-                self.waiting_queue.put(sdk.TransportClosedError("closed"))
+            if self.subscription is not None:
+                subscribed_at_close.append(not self.subscription._closed)
             router.fail_all(sdk.TransportClosedError("closed"))
 
     monkeypatch.setattr(sdk, "AsyncCodex", Client)
@@ -561,4 +574,8 @@ def test_real_sdk_blocking_reader_is_released_before_stream_unregister(config, m
     model = adapter(config)
     result = model.predict(Request(text="Explain a chemical bond."), config.policy)
     assert result.error_code == "codex_timeout"
-    assert registered_at_close == [True]
+    assert reader_started.is_set() and reader_finished.is_set()
+    assert subscribed_at_close == [True]
+    assert interrupted == [("thread", "turn")]
+    assert len(subscriptions) == 1 and subscriptions[0]._closed
+    assert not subscriptions[0]._state.subscribers
