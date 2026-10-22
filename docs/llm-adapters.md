@@ -65,7 +65,10 @@ an unloaded model, or a revision mismatch is therefore a configuration failure r
 paid or measured model attempt. No minimum-confidence threshold is applied in the first baseline.
 Provider `abstained` is stored as ABSTAIN, distinct from policy REVIEW. An `unevaluated` gate is
 an operational error with code `abstention_unevaluated`; an unknown or internally inconsistent gate
-state is a schema error.
+state is a schema error. Laya 0.4.13's complete per-request truncation metadata is also required.
+If the service reports that any state tokens were dropped, the result is retained as an
+`input_truncated` operational error with its token and attempt accounting, never as a successful
+full-request decision. Missing, malformed, or inconsistent truncation metadata is a `schema_error`.
 
 Plain HTTP is accepted only when both endpoints use a numeric loopback hostname such as
 `127.0.0.1`; remote endpoints must use HTTPS. The example sends no authorization header. To use a

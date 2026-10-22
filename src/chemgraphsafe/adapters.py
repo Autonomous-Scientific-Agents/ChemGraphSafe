@@ -11,7 +11,7 @@ import httpx
 
 from .budget import BudgetExceeded, Ledger
 from .config import Config, ModelConfig
-from .models import Prediction, Request
+from .models import Prediction, Request, policy_labels
 from .prompts import classification_messages, classification_schema
 from .providers import argo_model
 from .storage import canonical, read_json
@@ -93,6 +93,35 @@ def _laya_gate_state(answer: dict) -> str | None:
     return state
 
 
+def _laya_input_truncated(body: dict) -> bool:
+    """Validate Laya 0.4.13's per-request truncation report."""
+    usage = body.get("usage")
+    if not isinstance(usage, dict):
+        raise ValueError("Laya response omitted its usage metadata")
+    state_tokens = usage.get("state_tokens")
+    dropped = usage.get("state_tokens_dropped")
+    truncated = usage.get("truncated")
+    questions = usage.get("truncated_questions")
+    if (
+        isinstance(state_tokens, bool)
+        or not isinstance(state_tokens, int)
+        or state_tokens < 0
+        or isinstance(dropped, bool)
+        or not isinstance(dropped, int)
+        or dropped < 0
+        or dropped > state_tokens
+        or not isinstance(truncated, bool)
+        or not isinstance(questions, list)
+        or any(not isinstance(question, str) or not question for question in questions)
+        or len(questions) != len(set(questions))
+        or any(question != "triage" for question in questions)
+        or truncated != (dropped > 0)
+        or truncated != bool(questions)
+    ):
+        raise ValueError("Invalid or inconsistent Laya truncation metadata")
+    return truncated
+
+
 def parse_laya(
     body: dict,
     *,
@@ -103,6 +132,7 @@ def parse_laya(
     common = usage_fields(body)
     common.pop("provider_cost_usd", None)
     common["returned_model"] = f"{model}@{revision}"
+    truncated = _laya_input_truncated(body)
     routing = body.get("routing")
     if not isinstance(routing, dict) or routing.get("model") != model:
         raise ValueError("Laya response did not use the configured checkpoint")
@@ -110,17 +140,20 @@ def parse_laya(
     answer = answers.get("triage") if isinstance(answers, dict) else None
     if not isinstance(answer, dict) or answer.get("type") != "choice":
         raise ValueError("Expected a Laya triage choice answer")
-    if "choice" not in answer or "probabilities" not in answer:
+    probabilities = answer.get("probabilities")
+    if "choice" not in answer or not isinstance(probabilities, dict):
         raise ValueError("Laya decision omitted its choice or distribution")
     # Validate the retained answer even when the confidence gate says not to use it.
     decision = Prediction(
         status="ok",
         decision=answer["choice"],
-        probabilities=answer["probabilities"],
+        probabilities=probabilities,
         probability_origin="native",
         **common,
     ).validate_policy(policy)
     gate = _laya_gate_state(answer)
+    if truncated:
+        return Prediction(status="error", error_code="input_truncated", **common)
     if gate == "abstained":
         return Prediction(status="abstain", error_code="provider_abstention", **common)
     if gate == "unevaluated":
@@ -436,7 +469,9 @@ class LayaModel(HTTPModel):
                 "triage": {
                     "type": "choice",
                     "instructions": policy["instructions"],
-                    "criteria": policy["criteria"],
+                    "criteria": {
+                        label: policy["criteria"][label] for label in policy_labels(policy)
+                    },
                 }
             },
         }

@@ -7,8 +7,9 @@ from chemgraphsafe import adapters, data, runner
 from chemgraphsafe.adapters import LayaModel, build_model, parse_laya
 from chemgraphsafe.budget import Ledger
 from chemgraphsafe.config import ModelConfig
-from chemgraphsafe.models import Request
-from chemgraphsafe.storage import read_rows
+from chemgraphsafe.models import Prediction, Request, policy_labels
+from chemgraphsafe.rights import HostedDestination
+from chemgraphsafe.storage import read_json, read_rows, write_json
 
 REVISION = "55cf4c4ebb4ebe31b2550e8bdf3bd21b99753851"
 
@@ -57,6 +58,10 @@ def laya_reply(*, answer=None, routing_model="english"):
         "usage": {
             "input_tokens": 18,
             "output_tokens": 0,
+            "state_tokens": 12,
+            "state_tokens_dropped": 0,
+            "truncated": False,
+            "truncated_questions": [],
             # A local server has no provider charge. Ignore this even if a proxy adds it.
             "cost": 99,
         },
@@ -68,6 +73,22 @@ def laya_reply(*, answer=None, routing_model="english"):
             "workflow": None,
         },
     }
+
+
+def truncated_laya_reply():
+    body = laya_reply()
+    body["usage"] |= {
+        "state_tokens_dropped": 4,
+        "truncated": True,
+        "truncated_questions": ["triage"],
+    }
+    return body
+
+
+def null_distribution_laya_reply():
+    body = laya_reply()
+    body["answers"]["triage"]["probabilities"] = None
+    return body
 
 
 @pytest.mark.parametrize(
@@ -160,6 +181,15 @@ def test_laya_endpoint_location_classification():
     )
 
 
+def test_hosted_laya_is_a_valid_approval_destination():
+    destination = HostedDestination(
+        adapter="laya",
+        model="english",
+        endpoint="https://laya.example.test/v1/systemone",
+    )
+    assert destination.adapter == "laya"
+
+
 @pytest.mark.parametrize("authenticated", [False, True])
 def test_laya_preflight_wire_shape_auth_identity_and_no_leakage(config, monkeypatch, authenticated):
     requests = []
@@ -197,7 +227,7 @@ def test_laya_preflight_wire_shape_auth_identity_and_no_leakage(config, monkeypa
         "text": "Explain a chemical bond.",
         "context": "Introductory class",
     }
-    assert set(body["questions"]["triage"]["criteria"]) == {"ALLOW", "REVIEW", "BLOCK"}
+    assert list(body["questions"]["triage"]["criteria"]) == ["ALLOW", "REVIEW", "BLOCK"]
     assert "min_confidence" not in body
     serialized = requests[1].content.decode()
     for forbidden in (
@@ -273,7 +303,7 @@ def test_laya_binary_policy_contract(config, answer, expected_status, expected_d
 
     assert [request.method for request in requests] == ["GET", "POST"]
     body = json.loads(requests[1].content)
-    assert set(body["questions"]["triage"]["criteria"]) == {"ALLOW", "BLOCK"}
+    assert list(body["questions"]["triage"]["criteria"]) == ["ALLOW", "BLOCK"]
     assert result.status == expected_status and result.decision == expected_decision
     if expected_status == "error":
         assert result.error_code == "schema_error"
@@ -435,6 +465,42 @@ def test_laya_malformed_gate_metadata_is_rejected(gate):
         parse_laya(laya_reply(answer=answer), model="english", revision=REVISION)
 
 
+def test_laya_reported_truncation_is_not_a_successful_prediction():
+    result = parse_laya(truncated_laya_reply(), model="english", revision=REVISION)
+    assert result.status == "error" and result.error_code == "input_truncated"
+    assert result.decision is None and result.probabilities is None
+    assert result.probability_origin is None
+    assert result.input_tokens == 18 and result.output_tokens == 0
+    assert result.returned_model == f"english@{REVISION}"
+
+
+def malformed_laya_usage_bodies():
+    valid = laya_reply()
+    usage = valid["usage"]
+    yield {key: value for key, value in valid.items() if key != "usage"}
+    yield {**valid, "usage": None}
+    yield {**valid, "usage": []}
+    for field in ("state_tokens", "state_tokens_dropped", "truncated", "truncated_questions"):
+        yield {**valid, "usage": {key: value for key, value in usage.items() if key != field}}
+    for state_tokens in (True, -1, 1.5):
+        yield {**valid, "usage": {**usage, "state_tokens": state_tokens}}
+    for dropped in (True, -1, 1.5, 13):
+        yield {**valid, "usage": {**usage, "state_tokens_dropped": dropped}}
+    for truncated in (None, 0, 1, "false"):
+        yield {**valid, "usage": {**usage, "truncated": truncated}}
+    yield {**valid, "usage": {**usage, "state_tokens_dropped": 1, "truncated": False}}
+    yield {**valid, "usage": {**usage, "truncated": True}}
+    for questions in (None, "triage", [True], [""], ["other"], ["triage", "triage"]):
+        yield {**valid, "usage": {**usage, "truncated_questions": questions}}
+    yield {**valid, "usage": {**usage, "truncated_questions": ["triage"]}}
+
+
+@pytest.mark.parametrize("body", list(malformed_laya_usage_bodies()))
+def test_laya_malformed_or_inconsistent_truncation_metadata_is_rejected(body):
+    with pytest.raises(ValueError, match="usage|truncation"):
+        parse_laya(body, model="english", revision=REVISION)
+
+
 def malformed_laya_bodies():
     valid = laya_reply()
     answer = valid["answers"]["triage"]
@@ -449,6 +515,8 @@ def malformed_laya_bodies():
         **valid,
         "answers": {"triage": {k: v for k, v in answer.items() if k != "probabilities"}},
     }
+    for probabilities in (None, [], "not-a-distribution"):
+        yield {**valid, "answers": {"triage": {**answer, "probabilities": probabilities}}}
     yield {**valid, "answers": {"triage": {**answer, "choice": "MAYBE"}}}
     yield {
         **valid,
@@ -469,6 +537,48 @@ def malformed_laya_bodies():
 def test_laya_malformed_identity_answer_or_distribution_is_rejected(body):
     with pytest.raises(ValueError):
         parse_laya(body, model="english", revision=REVISION)
+
+
+@pytest.mark.parametrize(
+    "body,error_code",
+    [
+        (truncated_laya_reply(), "input_truncated"),
+        (null_distribution_laya_reply(), "schema_error"),
+        (
+            {
+                **laya_reply(),
+                "usage": {
+                    **laya_reply()["usage"],
+                    "state_tokens_dropped": 1,
+                    "truncated": False,
+                },
+            },
+            "schema_error",
+        ),
+    ],
+)
+def test_laya_incomplete_or_malformed_input_contract_is_accounted(config, body, error_code):
+    requests = []
+
+    def respond(request):
+        requests.append(request)
+        return (
+            httpx.Response(200, json=health())
+            if request.method == "GET"
+            else httpx.Response(200, json=body)
+        )
+
+    ledger = Ledger(config.root / "incomplete-input-ledger.sqlite", 1, 10)
+    with httpx.Client(transport=httpx.MockTransport(respond)) as client:
+        adapter = LayaModel(config, laya_config(), ledger, "run", client=client)
+        result = adapter.predict(Request(text="Define an atom."), config.policy)
+
+    assert [request.method for request in requests] == ["GET", "POST"]
+    assert result.status == "error" and result.error_code == error_code
+    assert result.decision is None and result.probabilities is None
+    assert result.input_tokens == 18 and result.output_tokens == 0
+    assert result.returned_model == f"english@{REVISION}"
+    assert result.attempts == 1 and ledger.summary()["attempts_only"] == 1
 
 
 def test_laya_503_retry_and_attempts_only_accounting(config):
@@ -601,7 +711,55 @@ def test_local_laya_can_evaluate_local_only_data_and_resume_without_inference(co
     assert runner.ledger_for(config).summary()["attempts_only"] == 10
 
 
-def test_local_laya_requires_rights_evidence_after_preflight_before_budget(config, monkeypatch):
+def test_reversed_policy_order_resumes_with_one_canonical_wire_order(config, monkeypatch):
+    requests = []
+    posts = 0
+
+    def respond(request):
+        nonlocal posts
+        requests.append(request)
+        if request.method == "GET":
+            return httpx.Response(200, json=health())
+        posts += 1
+        # Leave exactly one retryable row in the partial run without relying on another fix here.
+        body = laya_reply(routing_model="wrong-checkpoint") if posts == 4 else laya_reply()
+        return httpx.Response(200, json=body)
+
+    install_mock_laya_client(monkeypatch, respond)
+    make_one_fixture_local_only(config)
+    config.offline = False
+    config.models = [laya_config()]
+    data.prepare(config)
+    data.freeze(config)
+
+    semantic_hash = config.semantic_hash()
+    first = runner.evaluate(config)
+    first_manifest = read_json(config.run / "manifest.json")
+    assert not first["complete"] and first["outcomes"] == {"ok": 9, "error": 1}
+
+    policy = read_json(config.path(config.policy_file))
+    policy["criteria"] = dict(reversed(list(policy["criteria"].items())))
+    write_json(config.path(config.policy_file), policy)
+    assert config.semantic_hash() == semantic_hash
+
+    second = runner.evaluate(config)
+    second_manifest = read_json(config.run / "manifest.json")
+    assert second["complete"] and second["outcomes"] == {"ok": 10}
+    assert posts == 11
+    assert first_manifest["run_key"] == second_manifest["run_key"]
+    assert first_manifest["semantic_hash"] == second_manifest["semantic_hash"] == semantic_hash
+    orders = [
+        list(json.loads(request.content)["questions"]["triage"]["criteria"])
+        for request in requests
+        if request.method == "POST"
+    ]
+    assert orders == [list(policy_labels(config.policy))] * 11
+    assert all(
+        row["prediction"]["status"] == "ok" for row in read_rows(config.run / "predictions.jsonl")
+    )
+
+
+def test_local_laya_requires_rights_evidence_before_preflight_or_budget(config, monkeypatch):
     requests = []
 
     def respond(request):
@@ -617,12 +775,12 @@ def test_local_laya_requires_rights_evidence_after_preflight_before_budget(confi
 
     with pytest.raises(ValueError, match="Rights evidence"):
         runner.evaluate(config)
-    assert len(requests) == 1 and requests[0].method == "GET"
-    assert runner.ledger_for(config).summary()["attempts"] == 0
+    assert requests == []
+    assert not config.path(config.budget.ledger).exists()
     assert not (config.run / "predictions.jsonl").exists()
 
 
-def test_hosted_laya_requires_hosted_processing_rights_after_identity_preflight(
+def test_hosted_laya_requires_hosted_processing_rights_before_preflight_or_budget(
     config, monkeypatch
 ):
     requests = []
@@ -645,9 +803,46 @@ def test_hosted_laya_requires_hosted_processing_rights_after_identity_preflight(
 
     with pytest.raises(ValueError, match="Hosted processing"):
         runner.evaluate(config)
-    assert len(requests) == 1 and requests[0].method == "GET"
-    assert runner.ledger_for(config).summary()["attempts"] == 0
+    assert requests == []
+    assert not config.path(config.budget.ledger).exists()
     assert not (config.run / "predictions.jsonl").exists()
+
+
+def test_mixed_run_submits_only_hosted_destinations_for_approval(config, monkeypatch):
+    hosted = ModelConfig(
+        name="jev",
+        adapter="decisions",
+        model="typesafe/jev-1.14",
+        endpoint="https://openrouter.example.test/api/alpha/decisions",
+        api_key_env="TEST_JEV_KEY",
+        budget_mode="attempts_only",
+    )
+    config.offline = False
+    config.models = [laya_config(), hosted]
+    captured = []
+    approval = {"evidence": "test approval snapshot"}
+
+    def check_hosted(rows, *, config, models):
+        captured.extend(models)
+        return approval
+
+    class FakeAdapter:
+        runtime_provenance = None
+
+        def predict(self, request, policy):
+            return Prediction(status="ok", decision="ALLOW")
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(runner, "check_hosted_rights", check_hosted)
+    monkeypatch.setattr(runner, "build_model", lambda *args, **kwargs: FakeAdapter())
+
+    outcome = runner.smoke(config)
+    execution = read_json(config.run / "smoke/manifest.json")["execution"]
+    assert outcome["complete"]
+    assert [model.name for model in captured] == ["jev"]
+    assert execution["hosted_processing_approval"] == approval
 
 
 def test_laya_and_jev_are_independent_baselines_without_cross_feeding(config, monkeypatch):
@@ -696,11 +891,11 @@ def test_laya_and_jev_are_independent_baselines_without_cross_feeding(config, mo
     for request in posts:
         wire = json.loads(request.content)
         assert set(wire["state"]) == {"text", "context"}
-        assert set(wire["questions"]["triage"]["criteria"]) == {
+        assert list(wire["questions"]["triage"]["criteria"]) == [
             "ALLOW",
             "REVIEW",
             "BLOCK",
-        }
+        ]
         assert "decision" not in wire["state"] and "probabilities" not in wire["state"]
         assert "returned_model" not in wire["state"]
 
