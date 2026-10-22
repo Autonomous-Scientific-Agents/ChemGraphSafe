@@ -1,12 +1,14 @@
 """Explicit workflows; dataset and run mutations are serialized by the CLI."""
 
 from collections import Counter
+from contextlib import ExitStack
 
 from .adapters import build_model
 from .budget import Ledger
 from .config import Config
 from .data import annotations, ensure_unfrozen, examples, freeze, prepare, verify_freeze
 from .models import Annotation, Example, Prediction, PredictionRow, Request
+from .provenance import EXECUTION_VERSION, environment_identity
 from .storage import code_hash, digest, file_hash, read_json, read_rows, write_json, write_rows
 
 FATAL_CODES = {
@@ -19,6 +21,8 @@ FATAL_CODES = {
     "codex_quota_exhausted",
     "codex_runtime_error",
     "codex_tool_attempt",
+    "codex_configuration_changed",
+    "codex_configuration_unavailable",
 }
 
 
@@ -110,23 +114,52 @@ def _run_models(config: Config, rows: list[Example], split: dict, identity: dict
     if not config.offline:
         check_hosted_rights(rows)
     ledger = ledger_for(config)
+    # Preflight every model without inference before deriving the final execution identity.
+    with ExitStack() as cleanup:
+        adapters = []
+        for model in config.models:
+            adapter = build_model(config, model, ledger)
+            cleanup.callback(adapter.close)
+            adapters.append((model, adapter))
+        return _run_preflighted(config, rows, split, identity, run_path, ledger, adapters)
+
+
+def _run_preflighted(config, rows, split, identity, run_path, ledger, adapters):
     replay_hashes = {
         m.name: file_hash(config.path(m.replay_file))
         for m in config.models
         if m.adapter == "replay"
     }
+    execution = {
+        "version": EXECUTION_VERSION,
+        "runner": config.runner.model_dump(),
+        "code_hash": code_hash(),
+        "environment": environment_identity(codex=any(m.adapter == "codex" for m in config.models)),
+        "models": {
+            m.name: adapter.runtime_provenance for m, adapter in adapters if m.adapter == "codex"
+        },
+    }
+    execution_hash = digest(execution)
     run_key = digest(
         {
             "identity": identity,
-            "code": code_hash(),
+            "execution": execution_hash,
             "replays": replay_hashes,
             "semantic": config.semantic_hash(),
         }
     )
+    for model, adapter in adapters:
+        if model.adapter != "replay":
+            adapter.run_key = run_key + "/" + model.name
+    lockfile = config.root / "uv.lock"
     manifest = {
+        "manifest_version": EXECUTION_VERSION,
+        "execution": execution,
+        "execution_hash": execution_hash,
+        "lockfile_hash": file_hash(lockfile) if lockfile.exists() else None,
         "run_key": run_key,
         "identity": identity,
-        "code_hash": code_hash(),
+        "code_hash": execution["code_hash"],
         "mock": config.offline,
         "models": [m.spec() for m in config.models],
         "case_ids": [e.id for e in rows],
@@ -143,11 +176,18 @@ def _run_models(config: Config, rows: list[Example], split: dict, identity: dict
     manifest_path = run_path / "manifest.json"
     if manifest_path.exists():
         old = read_json(manifest_path)
-        if old["run_key"] != run_key or old["ledger_path"] != manifest["ledger_path"]:
-            raise ValueError("Run identity/code/ledger changed; use a new run directory")
+        if (
+            old.get("manifest_version") != EXECUTION_VERSION
+            or old["run_key"] != run_key
+            or old["ledger_path"] != manifest["ledger_path"]
+            or old.get("execution_hash") != execution_hash
+            or digest(old.get("execution")) != execution_hash
+        ):
+            raise ValueError(
+                "Run identity/code/ledger or execution settings changed; use a new run directory"
+            )
     elif (run_path / "predictions.jsonl").exists():
         raise ValueError("Predictions exist without their run manifest")
-    write_json(manifest_path, manifest)
     # Reporting needs local references, but no text or model/curator free text.
     ann = annotations(config) if (config.dataset / "examples.jsonl").exists() else {}
     reference = [
@@ -163,10 +203,16 @@ def _run_models(config: Config, rows: list[Example], split: dict, identity: dict
         for e in rows
     ]
     manifest["references_hash"] = digest(reference)
-    write_json(manifest_path, manifest)
-    write_json(run_path / "references.json", reference)
+    if manifest_path.exists():
+        if (
+            old.get("references_hash") != manifest["references_hash"]
+            or digest(read_json(run_path / "references.json")) != manifest["references_hash"]
+        ):
+            raise ValueError("Run references changed; use a new run directory")
+        # Preserve creation-time provenance (including the original lockfile hash).
+        manifest = old
     old_rows = [PredictionRow.model_validate(r) for r in read_rows(run_path / "predictions.jsonl")]
-    if any(r.run_key != run_key for r in old_rows):
+    if any(r.run_key != run_key or r.split != split.get(r.example_id) for r in old_rows):
         raise ValueError("Prediction rows do not belong to this run")
     saved = {(r.model_name, r.example_id): r for r in old_rows}
     if len(saved) != len(old_rows):
@@ -174,11 +220,10 @@ def _run_models(config: Config, rows: list[Example], split: dict, identity: dict
     expected = {(m.name, e.id) for m in config.models for e in rows}
     if set(saved) - expected:
         raise ValueError("Unexpected prediction IDs/models")
-    adapters = []
+    # Nothing above this point replaces existing run artifacts on a rejected resume.
+    write_json(manifest_path, manifest)
+    write_json(run_path / "references.json", reference)
     try:
-        # Validate credentials and pricing for every configured model before spending.
-        for m in config.models:
-            adapters.append((m, build_model(config, m, ledger, run_key + "/" + m.name)))
         for model, adapter in adapters:
             fatal = None
             for e in rows:
@@ -201,8 +246,6 @@ def _run_models(config: Config, rows: list[Example], split: dict, identity: dict
                 )
                 write_rows(run_path / "predictions.jsonl", [r.model_dump() for r in saved.values()])
     finally:
-        for _, adapter in adapters:
-            adapter.close()
         if ledger:
             manifest["budget"] = ledger.summary()
         write_json(manifest_path, manifest)

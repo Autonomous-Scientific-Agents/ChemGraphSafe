@@ -186,6 +186,7 @@ def test_identity_and_offline_validation(config):
         "name": "curator",
         "adapter": "codex",
         "model": "codex:gpt-4.1-mini",
+        "reasoning_effort": "medium",
         "budget_mode": "attempts_only",
     }
     with pytest.raises(ValueError, match="differ"):
@@ -199,7 +200,14 @@ def test_identity_and_offline_validation(config):
 def test_legacy_config_semantics_unchanged(config):
     spec = config.models[0].spec()
     assert "budget_mode" not in spec and "argo_user_env" not in spec
+    assert "reasoning_effort" not in spec
+    assert "codex_prompt_contracts" not in config.semantic_config()
     assert ModelConfig.model_validate(spec).spec() == spec
+
+
+def test_reasoning_effort_rejected_for_non_codex():
+    with pytest.raises(ValueError, match="only by Codex"):
+        argo_config(reasoning_effort="medium")
 
 
 def test_argo_rejects_known_unsupported_temperature():

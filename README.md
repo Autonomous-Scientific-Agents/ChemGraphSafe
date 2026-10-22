@@ -74,7 +74,10 @@ The endpoint must be reachable from your network. The example selects `argo:gpt-
 
 For Codex, install `uv sync --locked --extra dev --extra codex`, establish a ChatGPT login with
 `codex login`, and replace the model placeholder in `configs/codex.toml` with an account-supported
-model ID. The SDK bundles its runtime; the CLI is needed only if you use it to establish login.
+model ID. Set `reasoning_effort` explicitly for each Codex model; preflight checks model/effort
+support without starting an inference turn. The SDK bundles its runtime; the CLI is needed only
+if you use it to establish login. Existing Codex experiments require new data/run directories
+for the corrected prompt contract; see [evaluation versioning](docs/evaluation.md).
 
 ```sh
 uv run chemgraphsafe smoke --config configs/argo.toml

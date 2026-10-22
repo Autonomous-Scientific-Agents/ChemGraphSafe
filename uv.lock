@@ -49,6 +49,7 @@ source = { editable = "." }
 dependencies = [
     { name = "httpx" },
     { name = "numpy" },
+    { name = "packaging" },
     { name = "pydantic" },
     { name = "scikit-learn" },
     { name = "typer" },
@@ -68,6 +69,7 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.27,<1" },
     { name = "numpy", specifier = ">=2,<3" },
     { name = "openai-codex", marker = "extra == 'codex'", specifier = "==0.144.4" },
+    { name = "packaging", specifier = ">=24,<27" },
     { name = "pydantic", specifier = ">=2.9,<3" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8,<10" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.8,<1" },

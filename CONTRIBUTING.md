@@ -13,6 +13,10 @@ Keep changes scoped to one loader, adapter, metric, or curation improvement.
   in `build_model`, and extend `ModelConfig.adapter`. Only request text/context reaches a model.
   Argo shares the HTTP transport; `codex.py` lazily loads the optional SDK. See
   [LLM adapter setup](docs/llm-adapters.md) for their authentication and accounting contracts.
+- `prompts.py` holds shared classification instructions and Codex's freeze-level prompt
+  fingerprint. `provenance.py` collects installed runtime dependencies without dev extras.
+  Codex constructors expose `runtime_provenance` after no-inference preflight. The runner binds
+  the finalized `run_key` to live adapters before prediction; construction must not spend attempts.
 - `reporting.py`: add metrics with explicit denominators, missing-data behavior, and reference
   provenance. Use successful decisions, native abstentions, and failures in regression cases.
 

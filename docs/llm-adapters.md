@@ -34,7 +34,11 @@ The optional `openai-codex==0.144.4` SDK bundles a matching runtime, following C
 See the [official SDK documentation](https://learn.chatgpt.com/docs/codex-sdk).
 
 Edit `configs/codex.toml` and replace `codex:REPLACE_WITH_ACCOUNT_MODEL_ID` with an explicit
-account-supported model. There is no automatic default/model substitution. API-key-authenticated
+account-supported model. Set `reasoning_effort` explicitly, for example `"medium"`, for both
+evaluated models and any Codex curator. No effort or model is silently selected or substituted.
+Preflight checks the complete account model catalog, including hidden entries and subsequent
+pages, for the requested model and effort. Missing/unsupported selections fail before any turn
+or inference reservation. API-key-authenticated
 sessions are rejected, and API-key environment overrides are cleared for the SDK process.
 Use `uv run --extra codex ...` when invoking the CLI so uv retains the optional dependency.
 
@@ -51,6 +55,22 @@ token counts survive parsing and transport failures and are summed across adapte
 Temperature and seed are rejected for Codex. Returned model identity stays null when the runtime
 does not provide it; the requested ID remains in the manifest. Free-text refusals remain schema
 errors because this SDK contract exposes no dedicated classification-refusal field.
+
+The policy and required schema are trusted thread instructions; turn input contains only the
+canonical `untrusted_request` object with text/context. Input-byte limits include the trusted
+instructions, request, and output schema. The prompt contract is fingerprinted in the freeze.
+
+Preflight initializes the SDK and an ephemeral thread without starting a turn. It retains only
+an allowlist of execution metadata: SDK/runtime versions, runtime-selected model/provider,
+reasoning effort/summary, verbosity, service tier, and context/compaction settings. Null optional
+settings mean the runtime did not expose an explicit value; they are not invented defaults.
+No complete user configuration, credential, account information, or temporary path is stored.
+Reasoning effort overrides personal defaults. Other recorded settings may inherit user defaults;
+changing them requires a new run. Every attempt checks the runtime contract again before its
+turn; drift becomes fatal `codex_configuration_changed`. These checks cannot identify an
+unexposed checkpoint behind a mutable model alias, and runtime-selected names are not recorded
+as provider-returned checkpoint identities. A rejected attempt still counts as an adapter
+invocation under the existing attempts-only accounting.
 
 The attempt limit counts adapter invocations/retries, not hidden model requests within one Codex
 turn. Cumulative token usage includes those internal requests. Neither the local ledger nor the
@@ -82,6 +102,10 @@ the dollar cap stops metered calls.
 For evaluation, use the new data/run directories in the examples. To retain an existing pilot's
 examples, splits and ordering, enable `data.inherited_freeze` pointing to its `freeze.json` before
 preparation. Keep the original dataset, runs and shared budget ledger intact.
+
+The execution-identity and trusted-prompt changes require a fresh Codex data/run version if the
+example directories were already used. Older reports remain readable. See
+[evaluation versioning](evaluation.md) for compatibility and provenance details.
 
 ```sh
 uv run chemgraphsafe data prepare --config configs/argo.toml

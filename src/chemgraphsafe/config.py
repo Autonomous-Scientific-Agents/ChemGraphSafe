@@ -8,6 +8,7 @@ from urllib.parse import urlsplit
 from pydantic import Field, model_validator
 
 from .models import Record
+from .prompts import codex_prompt_contract
 from .providers import ARGO_ENDPOINT, ARGO_WITHOUT_TEMPERATURE, argo_model, model_identity
 from .storage import digest, read_json
 
@@ -43,12 +44,15 @@ class ModelConfig(Record):
     max_output_tokens: int = Field(default=256, ge=1)
     temperature: float | None = None
     seed: int | None = None
+    reasoning_effort: str | None = None
 
     @model_validator(mode="after")
     def endpoint_safe(self):
         if self.name in {"always-allow", "always-review"}:
             raise ValueError("Model name is reserved for a diagnostic baseline")
         if self.adapter == "codex":
+            if not self.reasoning_effort or self.reasoning_effort != self.reasoning_effort.strip():
+                raise ValueError("Codex requires an explicit nonempty reasoning_effort")
             if not self.model.startswith("codex:") or not self.model[6:].strip():
                 raise ValueError("Codex requires codex:<model-id>")
             if self.model[6:] != self.model[6:].strip():
@@ -59,6 +63,8 @@ class ModelConfig(Record):
                 raise ValueError("Codex subscription requires budget_mode='attempts_only'")
             if self.temperature is not None or self.seed is not None:
                 raise ValueError("Codex does not support temperature or seed")
+        elif self.reasoning_effort is not None:
+            raise ValueError("reasoning_effort is supported only by Codex")
         if self.adapter == "argo":
             argo_model(self.model)
             if self.model in ARGO_WITHOUT_TEMPERATURE and self.temperature is not None:
@@ -94,6 +100,8 @@ class ModelConfig(Record):
     def spec(self) -> dict:
         """Keep legacy semantic hashes stable when new provider options are unused."""
         result = self.model_dump()
+        if self.adapter != "codex":
+            result.pop("reasoning_effort")
         if self.adapter != "argo":
             result.pop("argo_user_env")
         if self.budget_mode == "usd":
@@ -162,12 +170,20 @@ class Config(Record):
         return p
 
     def semantic_config(self) -> dict:
-        return {
+        result = {
             "models": [m.spec() for m in self.models],
             "curator": self.curator.spec() if self.curator else None,
             "policy": self.policy,
             "offline": self.offline,
         }
+        contracts = {}
+        if any(m.adapter == "codex" for m in self.models):
+            contracts["evaluation"] = codex_prompt_contract(self.policy)
+        if self.curator and self.curator.adapter == "codex":
+            contracts["curation"] = codex_prompt_contract(self.policy, curator=True)
+        if contracts:
+            result["codex_prompt_contracts"] = contracts
+        return result
 
     def semantic_hash(self) -> str:
         return digest(self.semantic_config())
