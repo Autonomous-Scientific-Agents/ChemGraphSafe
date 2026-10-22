@@ -5,15 +5,16 @@ template for one bounded item; avoid changing shared policy semantics without co
 
 | Track | First deliverable | Acceptance evidence |
 |---|---|---|
-| Data audit and curation | Audit quarantined IDs; add the SciSafetyBench loader | Provenance/rights record, loader tests, separate challenge-set manifest |
+| Data audit and curation | Audit quarantined IDs and SciSafetyBench rule references | Adjudication provenance, agreement analysis, versioned annotations |
 | Model adapters | Add Kev or Laya serving adapter | Typed input-only contract, native response tests, identity/latency/cost reporting |
 | Evaluation and calibration | Add calibration and robustness analysis | Known-answer metric tests, valid probability provenance, explicit denominators, dev-only fitting |
 | Fine-tuning and export | Design training export and one upstream training recipe | Group-disjoint training set, audited labels, reproducible checkpoint and untouched evaluation |
 
 ## Suggested issues
 
-1. **SciSafetyBench chemistry challenge loader.** Implement the [loader contract](scisafetybench-loader.md).
-   Treat all-risk coverage separately; it cannot establish benign false-positive rates.
+1. **SciSafetyBench reference audit.** Audit the provisional category mapping for the implemented
+   [80-case chemistry/materials challenge](scisafetybench-loader.md). Preserve original references
+   and record adjudication in a new version. This challenge cannot establish benign false-positive rates.
 2. **Audit source conflicts and provisional annotations.** Review the 22 native/split conflicts,
    preserve adjudication provenance, and measure inter-reviewer agreement. Never silently overwrite
    an upstream label. Add optional LLM curation only with a configured distinct model.

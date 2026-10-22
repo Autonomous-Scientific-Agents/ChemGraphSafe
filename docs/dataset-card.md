@@ -42,7 +42,8 @@ This small English pilot measures request triage and source-label agreement. It 
 chemical knowledge, agent behavior, response safety, or deployment reliability. Upstream label
 errors, model training overlap, subtle duplicates, and sampling bias remain possible.
 
-SciSafetyBench is a separate future challenge set; see its [loader contract](scisafetybench-loader.md).
+SciSafetyBench is implemented as a separate 80-case chemistry/materials challenge with one shared
+oversight policy and provisional rule-derived references; see its [dataset and loader contract](scisafetybench-loader.md).
 SOSBench and SafeSci are opt-in future imports with source-specific access and processing checks.
 WMDP-Chem's knowledge questions and GHS molecular hazard labels must not be converted directly
 into this request-triage task. The original ChemSafetyBench prompt benchmark remains deferred

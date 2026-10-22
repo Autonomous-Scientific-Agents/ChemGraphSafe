@@ -101,6 +101,34 @@ Binary policies also work with Argo, Codex, generic chat, and offline replay ada
 `policy_file = "policies/triage-binary-v0.1.json"` in a configuration with new data/run directories;
 no separate mode flag is needed. See [evaluation and versioning](docs/evaluation.md).
 
+## SciSafetyBench chemistry and materials challenge
+
+`configs/scisafetybench.toml` evaluates all **80 prompts (40 chemistry + 40 materials science)**
+under one shared ALLOW/REVIEW/BLOCK oversight policy, using the existing Jev adapter. The original
+prompts are preserved. Native binary labels are absent; an offline category mapping produces
+**37 BLOCK / 43 REVIEW provisional references**, with no ALLOW references or LLM curation.
+
+```sh
+uv run chemgraphsafe data prepare --config configs/scisafetybench.toml
+uv run chemgraphsafe data annotate --config configs/scisafetybench.toml
+uv run chemgraphsafe data freeze --config configs/scisafetybench.toml
+```
+
+These steps make no inference calls. All 80 prompts are evaluation cases; preparation validates
+the pinned files and groups across both domains without sampling. Live dataset evaluation requires
+a recorded approval for the source revision and model destination; the preset supplies none.
+Follow the [approval workflow](docs/scisafetybench-loader.md#hosted-processing-approval) before live
+`evaluate`. Owned `smoke` prompts do not require dataset approval. The preset uses new `v2` data
+and `runs/scisafetybench-chem-materials-v2` run directories and the existing $10/500-attempt ledger.
+
+Reports show agreement with **rule-derived references, not expert-validated labels**, alongside
+the escalation rate (successful REVIEW/BLOCK decisions divided by all intended cases). They
+separate BLOCK/REVIEW swaps from ALLOW disagreements, retain all three constant baselines, and
+provide a public category legend. Escalation is descriptive: always-REVIEW and always-BLOCK both
+reach 100%. No benign false-positive rate or full
+three-class macro-F1 can be estimated. See the [source, policy, workflow, and reporting contract](docs/scisafetybench-loader.md).
+Existing SciHazard experiments remain unchanged.
+
 ## Use Argo or Codex
 
 For hosted Argo, export `ARGO_USER` with your Argonne username and use `configs/argo.toml`.
@@ -128,7 +156,10 @@ for curation, generic endpoints, accounting, and versioned evaluation instructio
 
 ## Interpret the report
 
-- Primary: source-label interception recall together with benign BLOCK/REVIEW rates and burden.
+- SciHazard primary: source-label interception recall with benign BLOCK/REVIEW rates and burden.
+- SciSafetyBench: provisional rule-reference agreement and escalation side by side on all
+  80 evaluation cases, plus BLOCK/REVIEW recalls and disagreement counts. Native binary
+  source-label rates are unavailable; escalation is not a correctness score.
 - Native provider refusals are ABSTAIN, separate from policy REVIEW. Interception lower/upper
   bounds exclude/include abstentions; operational errors count as misses in both bounds.
 - Decided-only precision/F1/F2 explicitly report their denominator. All intended cases remain in

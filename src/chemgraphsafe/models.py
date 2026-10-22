@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 Decision = Literal["ALLOW", "REVIEW", "BLOCK"]
 Status = Literal["ok", "abstain", "error"]
-Reason = Literal["legitimate_use", "harm_facilitation", "insufficient_context"]
+Reason = Literal["legitimate_use", "harm_facilitation", "insufficient_context", "operational_risk"]
 LABELS = ("ALLOW", "REVIEW", "BLOCK")
 BINARY_LABELS = ("ALLOW", "BLOCK")
 PROTOCOL_VERSION = "triage-1"
@@ -37,7 +37,7 @@ class Example(Record):
     source_id: str
     source_revision: str
     source_split: str
-    source_label: Literal["benign", "harmful"]
+    source_label: Literal["benign", "harmful"] | None
     source_native_harmful: bool | None = None
     domain: str = "Chemistry"
     category: str = "unspecified"
@@ -112,6 +112,23 @@ class Annotation(Record):
     requested_model: str
     prediction: Prediction
     source_disagreement: bool = False
+
+
+class RuleAnnotation(Record):
+    """A reproducible policy reference, without an invented model/curator identity."""
+
+    example_id: str
+    policy_hash: str
+    origin: Literal["rule_derived"] = "rule_derived"
+    rule_id: str
+    rule_hash: str
+    provenance: dict[str, str]
+    prediction: Prediction
+
+
+def parse_annotation(row: dict) -> Annotation | RuleAnnotation:
+    cls = RuleAnnotation if row.get("origin") == "rule_derived" else Annotation
+    return cls.model_validate(row)
 
 
 class PredictionRow(Record):

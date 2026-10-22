@@ -9,6 +9,7 @@ from .config import Config
 from .data import annotations, ensure_unfrozen, examples, freeze, prepare, verify_freeze
 from .models import Annotation, Example, Prediction, PredictionRow, Request
 from .provenance import EXECUTION_VERSION, environment_identity
+from .rights import check_hosted_rights
 from .storage import code_hash, digest, file_hash, read_json, read_rows, write_json, write_rows
 
 FATAL_CODES = {
@@ -32,11 +33,6 @@ def ledger_for(config: Config):
     return Ledger(
         config.path(config.budget.ledger), config.budget.max_usd, config.budget.max_attempts
     )
-
-
-def check_hosted_rights(rows: list[Example]):
-    if any(not e.hosted_processing_allowed or not e.rights_evidence for e in rows):
-        raise ValueError("Hosted processing is not authorized in every example's rights record")
 
 
 def predict_under_policy(adapter, request: Request, policy: dict) -> Prediction:
@@ -92,19 +88,24 @@ class ModelLabeler:
 
 def curate(config: Config):
     ensure_unfrozen(config)
+    if config.annotation_rule:
+        raise ValueError("Use data annotate for configured rule-derived references")
     if config.curator is None:
         raise ValueError("No curator configured; source-only freeze is supported")
     prepared = read_json(config.dataset / "prepare.json")
     if file_hash(config.dataset / "examples.jsonl") != prepared["examples_hash"]:
         raise ValueError("Prepared examples changed")
     rows = examples(config)
-    check_hosted_rights(rows)
+    if not config.offline:
+        check_hosted_rights(rows, config=config, models=[config.curator])
     existing = annotations(config)
     for annotation in existing.values():
         annotation.prediction.validate_policy(config.policy)
     curator_hash = digest(config.curator.spec())
     if any(
-        a.config_hash != curator_hash or a.policy_hash != digest(config.policy)
+        not isinstance(a, Annotation)
+        or a.config_hash != curator_hash
+        or a.policy_hash != digest(config.policy)
         for a in existing.values()
     ):
         raise ValueError("Curation configuration changed; create a new version")
@@ -132,8 +133,9 @@ def curate(config: Config):
 
 
 def _run_models(config: Config, rows: list[Example], split: dict, identity: dict, run_path):
+    approval = None
     if not config.offline:
-        check_hosted_rights(rows)
+        approval = check_hosted_rights(rows, config=config, models=config.models)
     ledger = ledger_for(config)
     # Preflight every model without inference before deriving the final execution identity.
     with ExitStack() as cleanup:
@@ -142,10 +144,10 @@ def _run_models(config: Config, rows: list[Example], split: dict, identity: dict
             adapter = build_model(config, model, ledger)
             cleanup.callback(adapter.close)
             adapters.append((model, adapter))
-        return _run_preflighted(config, rows, split, identity, run_path, ledger, adapters)
+        return _run_preflighted(config, rows, split, identity, run_path, ledger, adapters, approval)
 
 
-def _run_preflighted(config, rows, split, identity, run_path, ledger, adapters):
+def _run_preflighted(config, rows, split, identity, run_path, ledger, adapters, approval=None):
     replay_hashes = {
         m.name: file_hash(config.path(m.replay_file))
         for m in config.models
@@ -160,6 +162,9 @@ def _run_preflighted(config, rows, split, identity, run_path, ledger, adapters):
             m.name: adapter.runtime_provenance for m, adapter in adapters if m.adapter == "codex"
         },
     }
+    if approval is not None:
+        execution["hosted_processing_approval"] = approval
+        execution["hosted_processing_approval_hash"] = digest(approval)
     execution_hash = digest(execution)
     run_key = digest(
         {
@@ -218,6 +223,7 @@ def _run_preflighted(config, rows, split, identity, run_path, ledger, adapters):
             "id": e.id,
             "source_label": e.source_label,
             "source": e.source,
+            "domain": e.domain,
             "category_id": digest(e.category)[:12],
             "group": e.group,
             "split": split[e.id],

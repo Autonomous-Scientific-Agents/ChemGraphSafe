@@ -63,6 +63,49 @@ and always-BLOCK are the binary diagnostic baselines. Markdown and CSV tables om
 columns; legacy rate fields remain in `metrics.json` for compatibility. Optional policy-label
 confusion and macro-F1 use the active two- or three-class label set, and still require annotations.
 
+## SciSafetyBench all-evaluation protocol
+
+`configs/scisafetybench.toml` uses `data.protocol="challenge_eval"`, retaining all 80 chemistry
+and materials prompts in evaluation with seed-42 ordering. Native binary `source_label` is null.
+The default SciHazard `balanced_pilot` class/split gates are unchanged. Optional new settings are
+omitted from legacy hashes when unused; earlier freezes remain readable. Inference-code changes
+still require a new run directory.
+
+Run `data prepare`, `data annotate`, then `data freeze`. `annotation_rule="scisafetybench-risk-v1"`
+selects deterministic provisional references bound to the exact shared oversight policy; it is
+mutually exclusive with a curator. Annotation is local and requires no inference credentials.
+Freeze checks complete coverage, mapping, policy/rule hashes and provenance. Rules never enter
+model inputs. See the [full contract and counts](scisafetybench-loader.md).
+
+Reports show exact policy-reference agreement (37 BLOCK / 43 REVIEW) alongside escalation:
+successful REVIEW/BLOCK decisions divided by every intended case. ABSTAIN, ERROR and missing rows
+remain in both denominators. Escalation describes behavior, not correctness; always-REVIEW and
+always-BLOCK both reach 100%. `policy_agreement.disagreement_counts` separates `block_to_review`,
+`review_to_block`, and `allow_vs_review_or_block` among successful predictions and annotations.
+These are unverified disagreements, not proven unsafe decisions. ALLOW remains a valid model
+choice, but its reference support is zero; ALLOW recall, full three-class macro-F1 and benign
+false-positive rates are unavailable. Source-label metrics have zero denominators and no invented
+benign/harmful mapping. Reports include all three constant baselines and domain/category slices,
+and explicitly identify references as rule-derived provisional, not expert validated. Hashed slice
+keys remain stable; `category_labels.SciSafetyBench` maps them to public names. Small slices have
+limited precision: inspect their sample sizes and Wilson intervals. Policy comparison rows explain
+unavailable references with `curator_identity_conflict` or `no_successful_annotations`; escalation
+does not require reference annotations. New policy-reference queue flags are confined to the
+challenge/policy reporting path, preserving curated SciHazard error queues.
+
+Live SciSafetyBench evaluation or curation requires `hosted_processing_approval_file`, resolved
+against `project_root`. Its source/revision and adapter/model/endpoint destinations must match
+the actual examples and models before provider or ledger setup. Existing frozen `True` permission
+flags do not bypass this gate. See the [approval record format](scisafetybench-loader.md#hosted-processing-approval).
+Offline workflows, reports, and owned smoke prompts do not require this approval.
+
+Approval is runtime authorization: its validated record and canonical digest enter evaluation
+execution identity, while its path and content are excluded from freeze semantics. Formatting or
+moving the same record preserves identity; changing its contents requires a new run directory.
+The `v2` preset uses new data/run directories because new imports record hosted permission as
+pending. Existing `v1` freezes remain valid with their original matching configurations and may
+be reused with recorded approval in a new run directory. Never edit an old freeze or rights row.
+
 ## Metrics
 
 For three-way triage, primary interception lower bound is harmful REVIEW/BLOCK divided by

@@ -21,7 +21,8 @@ Keep changes scoped to one loader, adapter, metric, or curation improvement.
   provenance. Use successful decisions, native abstentions, and failures in regression cases.
 
 These are deliberately small extension points. No plugin service or GPU dependency is required.
-See [SciSafetyBench's loader contract](docs/scisafetybench-loader.md) for a concrete first issue.
+See [SciSafetyBench's implemented loader contract](docs/scisafetybench-loader.md) for an example
+of a pinned challenge set with nullable native labels and separate rule-derived references.
 
 ## Checks for a contribution
 
