@@ -16,3 +16,4 @@ runs/
 !.env.example
 .DS_Store
 .claudex-loop-install.json
+notebook (1).py
