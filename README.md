@@ -115,12 +115,17 @@ uv run chemgraphsafe data freeze --config configs/scisafetybench.toml
 ```
 
 These steps make no inference calls. All 80 prompts are evaluation cases; preparation validates
-the pinned files and groups across both domains without sampling. When ready for live inference,
-run `smoke`, `evaluate`, and `report` with this config and its
-`runs/scisafetybench-chem-materials-v1` run directory. It uses the existing $10/500-attempt ledger.
+the pinned files and groups across both domains without sampling. Live dataset evaluation requires
+a recorded approval for the source revision and model destination; the preset supplies none.
+Follow the [approval workflow](docs/scisafetybench-loader.md#hosted-processing-approval) before live
+`evaluate`. Owned `smoke` prompts do not require dataset approval. The preset uses new `v2` data
+and `runs/scisafetybench-chem-materials-v2` run directories and the existing $10/500-attempt ledger.
 
-Reports measure agreement with **rule-derived references, not expert-validated labels**, with
-domain/category slices and all three constant baselines. No benign false-positive rate or full
+Reports show agreement with **rule-derived references, not expert-validated labels**, alongside
+the escalation rate (successful REVIEW/BLOCK decisions divided by all intended cases). They
+separate BLOCK/REVIEW swaps from ALLOW disagreements, retain all three constant baselines, and
+provide a public category legend. Escalation is descriptive: always-REVIEW and always-BLOCK both
+reach 100%. No benign false-positive rate or full
 three-class macro-F1 can be estimated. See the [source, policy, workflow, and reporting contract](docs/scisafetybench-loader.md).
 Existing SciHazard experiments remain unchanged.
 
@@ -152,8 +157,9 @@ for curation, generic endpoints, accounting, and versioned evaluation instructio
 ## Interpret the report
 
 - SciHazard primary: source-label interception recall with benign BLOCK/REVIEW rates and burden.
-- SciSafetyBench primary: provisional rule-reference agreement and BLOCK/REVIEW recalls on all
-  80 evaluation cases. Native binary source-label rates are unavailable.
+- SciSafetyBench: provisional rule-reference agreement and escalation side by side on all
+  80 evaluation cases, plus BLOCK/REVIEW recalls and disagreement counts. Native binary
+  source-label rates are unavailable; escalation is not a correctness score.
 - Native provider refusals are ABSTAIN, separate from policy REVIEW. Interception lower/upper
   bounds exclude/include abstentions; operational errors count as misses in both bounds.
 - Decided-only precision/F1/F2 explicitly report their denominator. All intended cases remain in

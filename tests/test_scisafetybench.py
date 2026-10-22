@@ -1,6 +1,7 @@
 """Source-shaped owned fixtures only; no benchmark request text or live inference."""
 
 import copy
+import csv
 import hashlib
 import json
 from collections import Counter
@@ -12,10 +13,10 @@ from typer.testing import CliRunner
 
 from chemgraphsafe import data
 from chemgraphsafe import scisafetybench as ssb
-from chemgraphsafe.adapters import HTTPModel
+from chemgraphsafe.adapters import HTTPModel, ReplayModel, parse_chat
 from chemgraphsafe.budget import Ledger
 from chemgraphsafe.cli import app
-from chemgraphsafe.config import Config, DataConfig, load_config
+from chemgraphsafe.config import Config, DataConfig, ModelConfig, load_config
 from chemgraphsafe.models import Prediction, RuleAnnotation
 from chemgraphsafe.reporting import metrics, report
 from chemgraphsafe.runner import curate, evaluate
@@ -95,7 +96,8 @@ def test_pinned_loader_schema_ids_domains_and_verbatim_input(challenge):
         assert e.request.model_dump() == {"text": raw["Prompt"], "context": ""}
         assert e.id == "scisafetybench-" + digest([ssb.REVISION, filename, int(index)])[:20]
         assert e.source_revision == ssb.REVISION and ssb.REVISION in e.rights_evidence
-        assert e.hosted_processing_allowed and e.license == "MIT"
+        assert not e.hosted_processing_allowed and e.license == "MIT"
+        assert "separate recorded approval" in e.rights_evidence
         assert "PRIVATE" not in e.model_dump_json()
     assert rows == ssb.SciSafetyBenchLoader().load(challenge)
 
@@ -322,6 +324,10 @@ def test_missing_annotations_are_unavailable_not_rule_references(challenge):
     assert result["models"]["replay-demo"]["splits"]["eval"]["policy_agreement"] is None
     assert "rule-derived" not in (challenge.run / "report.md").read_text()
     assert "unavailable" in (challenge.run / "comparison.csv").read_text()
+    assert result["models"]["replay-demo"]["reference_unavailable_reason"] == (
+        "no_successful_annotations"
+    )
+    assert "no successful reference annotations" in (challenge.run / "report.md").read_text()
 
 
 def test_metrics_use_all_intended_cases_without_fabricating_binary_labels(challenge):
@@ -373,12 +379,25 @@ def test_challenge_workflow_reports_baselines_slices_and_id_only_errors(challeng
     ):
         score = result["models"][name]["splits"]["eval"]["policy_agreement"]
         assert score["accuracy"]["value"] == expected and score["accuracy"]["n"] == 80
+        escalation = result["models"][name]["splits"]["eval"]["escalation_rate"]
+        assert escalation["n"] == 80
+        assert escalation["value"] == (0 if name == "always-allow" else 1)
     model = result["models"]["replay-demo"]
     assert model["splits"]["eval"]["policy_agreement"]["accuracy"]["value"] == 79 / 80
+    assert model["splits"]["eval"]["escalation_rate"]["value"] == 79 / 80
+    assert model["reference_unavailable_reason"] is None
     assert set(model["splits"]) == {"eval"}
     assert model["slices"]["domain"]["Chemistry"]["n"] == 40
     assert model["slices"]["domain"]["Materials Science"]["n"] == 40
     assert len(model["slices"]["domain_category"]["Materials Science"]) == 4
+    assert result["category_labels"] == {
+        "SciSafetyBench": {digest(c)[:12]: c for c in ssb.RISK_MAPPING}
+    }
+    for category, n in zip(ssb.RISK_MAPPING, (9, 8, 10, 13), strict=True):
+        slice_ = model["slices"]["domain_category"]["Materials Science"][digest(category)[:12]]
+        assert slice_["n"] == slice_["escalation_rate"]["n"] == n
+        assert len(slice_["escalation_rate"]["ci95"]) == 2
+        assert len(slice_["policy_agreement"]["accuracy"]["ci95"]) == 2
     assert read_rows(challenge.run / "errors.jsonl")[0]["issue"] == (
         "policy_reference_disagreement_unverified"
     )
@@ -386,6 +405,11 @@ def test_challenge_workflow_reports_baselines_slices_and_id_only_errors(challeng
     assert "rule-derived provisional" in markdown and "not expert validated" in markdown
     assert "| ALLOW | 0 | 0 | 0 | 0 | 0 |" in markdown
     assert "unavailable" in markdown and "43" in markdown
+    assert "Escalation" in markdown and "not a correctness score" in markdown
+    assert all(category in markdown for category in ssb.RISK_MAPPING)
+    comparison = list(csv.DictReader((challenge.run / "comparison.csv").read_text().splitlines()))
+    assert float(comparison[0]["escalation_rate"]) == 79 / 80
+    assert comparison[0]["allow_vs_review_or_block"] == "1"
     for filename in (
         "report.md",
         "comparison.csv",
@@ -460,3 +484,89 @@ def test_release_hashes_and_policy_are_pinned():
         len(spec["sha256"]) == hashlib.sha256().digest_size * 2
         for spec in ssb.SOURCE_FILES.values()
     )
+
+
+def test_escalation_and_disagreements_keep_all_80_cases(challenge):
+    data.prepare(challenge)
+    data.annotate(challenge)
+    refs = [
+        {"id": a.example_id, "source_label": None, "annotation": a.model_dump()}
+        for a in data.annotations(challenge).values()
+    ]
+    blocks = [r["id"] for r in refs if r["annotation"]["prediction"]["decision"] == "BLOCK"]
+    reviews = [r["id"] for r in refs if r["annotation"]["prediction"]["decision"] == "REVIEW"]
+    predictions = {r["id"]: Prediction(**r["annotation"]["prediction"]) for r in refs}
+    predictions[blocks[0]] = Prediction(status="ok", decision="REVIEW")
+    predictions[reviews[0]] = Prediction(status="ok", decision="BLOCK")
+    predictions[blocks[1]] = Prediction(status="ok", decision="ALLOW")
+    predictions[blocks[2]] = Prediction(status="abstain")
+    predictions[blocks[3]] = Prediction(status="error")
+    del predictions[blocks[4]]
+    m = metrics(refs, predictions, policy=challenge.policy)
+    assert m["policy_agreement"]["accuracy"]["value"] == 74 / 80
+    assert m["escalation_rate"]["count"] == 76
+    assert m["escalation_rate"]["n"] == 80 and m["escalation_rate"]["value"] == 76 / 80
+    assert m["policy_agreement"]["disagreement_counts"] == {
+        "block_to_review": 1,
+        "review_to_block": 1,
+        "allow_vs_review_or_block": 1,
+    }
+    assert m["abstention_overall"]["count"] == 1 and m["error_rate"]["count"] == 2
+    assert m["unsafe_allow"]["value"] is None
+    assert metrics([], {}, policy=challenge.policy)["escalation_rate"]["value"] is None
+
+
+def test_identity_conflict_explains_unavailable_scores_but_keeps_escalation(challenge, monkeypatch):
+    challenge.annotation_rule = None
+    challenge.hosted_processing_approval_file = "does-not-exist.json"
+    data.prepare(challenge)
+    replay_rules(challenge)
+    records = read_json(challenge.root / "challenge-replay.json")
+    for prediction in records.values():
+        prediction.update(reason="operational_risk")
+    write_json(challenge.root / "curator.json", records)
+    challenge.curator = ModelConfig(
+        name="curator", adapter="replay", model="different-alias", replay_file="curator.json"
+    )
+    original_predict = ReplayModel.predict
+
+    def aliased_predict(self, request, policy):
+        prediction = original_predict(self, request, policy)
+        if self.model.name == "curator":
+            return prediction.model_copy(update={"returned_model": challenge.models[0].model})
+        return prediction
+
+    monkeypatch.setattr(ReplayModel, "predict", aliased_predict)
+    curate(challenge)
+    data.freeze(challenge)
+    evaluate(challenge)
+    report(challenge.run)
+    result = read_json(challenge.run / "metrics.json")["models"]["replay-demo"]
+    assert result["reference_unavailable_reason"] == "curator_identity_conflict"
+    assert result["splits"]["eval"]["policy_agreement"] is None
+    assert result["splits"]["eval"]["escalation_rate"]["value"] == 1
+    assert not read_rows(challenge.run / "errors.jsonl")
+    assert "curator/evaluated-model identity conflict" in (challenge.run / "report.md").read_text()
+    rows = list(csv.DictReader((challenge.run / "comparison.csv").read_text().splitlines()))
+    assert rows[0]["reference_unavailable_reason"] == "curator_identity_conflict"
+    assert rows[0]["block_to_review"] == "" and rows[0]["escalation_rate"] == "1.0"
+
+
+def test_operational_risk_parses_only_under_a_policy_that_allows_it(challenge):
+    body = {
+        "choices": [
+            {
+                "finish_reason": "stop",
+                "message": {
+                    "content": json.dumps({"decision": "REVIEW", "reason": "operational_risk"})
+                },
+            }
+        ]
+    }
+    prediction = parse_chat(body, curator=True, policy=challenge.policy)
+    assert prediction.reason == "operational_risk" and prediction.decision == "REVIEW"
+    legacy = read_json(challenge.root / "policies/triage-v0.1.json")
+    with pytest.raises(ValueError, match="reason codes"):
+        parse_chat(body, curator=True, policy=legacy)
+    with pytest.raises(ValueError, match="reason codes"):
+        prediction.validate_policy(legacy)

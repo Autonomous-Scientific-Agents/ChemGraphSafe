@@ -88,11 +88,12 @@ class SciSafetyBenchLoader:
                         domain=spec["domain"],
                         category=row["Risk Type"],
                         license="MIT",
-                        hosted_processing_allowed=True,
+                        hosted_processing_allowed=False,
                         rights_evidence=(
                             f"Repository release license: {LICENSE_URL}; "
                             "Copyright (c) 2024 Haofei Yu. No separate data license found. "
                             "Source links in rows are provenance, not additional license grants."
+                            " Hosted processing requires a separate recorded approval."
                         ),
                     )
                 )

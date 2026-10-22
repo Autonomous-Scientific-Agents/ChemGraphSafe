@@ -1,6 +1,25 @@
 # Local verification
 
-## SciSafetyBench integration — 2026-10-22
+## PR 5 review fixes — 2026-10-22
+
+- Locked development sync, Ruff lint/format checks, and the full offline suite passed:
+  **233 passed, 3 skipped**. The focused reporting, SciSafetyBench, and hosted-rights suite
+  passed **70 tests**; all provider calls used mock HTTP or replay fixtures.
+- The 80-case known-answer check gives **74/80 agreement**, **76/80 escalation**, and one each
+  of BLOCK→REVIEW, REVIEW→BLOCK, and ALLOW-vs-escalation-reference disagreements.
+- Approval regressions cover missing/invalid records, old frozen permission flags, source and
+  destination mismatches, curator destinations, approval-bound resume identity, and unchanged
+  freezes. They also check rejection before provider/budget setup and no approval leakage into
+  model inputs. No real approval record was created.
+- Curated SciHazard queue behavior, readable public category mappings, small-slice counts and
+  intervals, curator identity exclusions, and `operational_risk` validation are covered.
+- Existing pilot (100 cases), offline (10), codex-astra-full (228), and SciSafetyBench `v1` (80)
+  freezes passed read-only verification. Artifact hashes were unchanged before/after checks.
+- Offline CLI `evaluate` and `report` passed on 10 owned cases in a fresh temporary directory.
+  No existing experiment was evaluated or re-reported. No live inference or real dataset import
+  was performed for this follow-up; the new `v2` preset remains unprepared and unapproved.
+
+## Original SciSafetyBench integration — 2026-10-22
 
 - Locked development sync, Ruff lint/format checks, and the full offline suite passed:
   **206 passed, 3 skipped** (optional SDK contracts without the optional SDK installed).

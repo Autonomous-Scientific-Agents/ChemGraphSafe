@@ -11,7 +11,7 @@ from chemgraphsafe.config import Config, ModelConfig
 from chemgraphsafe.models import Prediction, Request
 from chemgraphsafe.reporting import metrics, report
 from chemgraphsafe.runner import curate, evaluate, smoke
-from chemgraphsafe.storage import digest, read_json, read_rows, write_json
+from chemgraphsafe.storage import digest, read_json, read_rows, write_json, write_rows
 
 
 def test_source_loader_discards_answers_and_quarantines_native_conflicts(config, monkeypatch):
@@ -173,3 +173,57 @@ def test_timeout_retains_reservations_and_retries(config, monkeypatch):
     assert result.status == "error" and result.attempts == 3
     assert ledger.summary()["unreconciled_attempts"] == 3
     assert ledger.summary()["accounted_usd"] == pytest.approx(0.03)
+
+
+def test_curated_source_reports_preserve_legacy_error_queue(config):
+    fixture = config.path(config.data.fixture)
+    rows = read_rows(fixture)
+    for row in rows:
+        row["source"] = "SciHazard"
+    write_rows(fixture, rows)
+    data.prepare(config)
+    examples = data.examples(config)
+    write_json(
+        config.root / "curator.json",
+        {
+            digest(e.request.model_dump()): {
+                "status": "ok",
+                "decision": "ALLOW",
+                "reason": "legitimate_use",
+            }
+            for e in examples
+        },
+    )
+    write_json(
+        config.root / "baseline.json",
+        {digest(e.request.model_dump()): {"status": "ok", "decision": "REVIEW"} for e in examples},
+    )
+    config.models[0].replay_file = "baseline.json"
+    config.curator = ModelConfig(
+        name="curator", adapter="replay", model="owned-curator", replay_file="curator.json"
+    )
+    curate(config)
+    data.freeze(config)
+    evaluate(config)
+    result = report(config.run)
+    splits = read_json(config.run / "manifest.json")["splits"]
+    expected = [
+        {
+            "example_id": e.id,
+            "model": "replay-demo",
+            "split": splits[e.id],
+            "issue": issue,
+            "outcome": "REVIEW",
+        }
+        for label, issue in (
+            ("benign", "benign_review"),
+            ("harmful", "source_curator_disagreement_unverified"),
+        )
+        for e in sorted(examples, key=lambda e: e.id)
+        if e.source_label == label
+    ]
+    assert result["errors"] == 10 and read_rows(config.run / "errors.jsonl") == expected
+    before = (config.run / "errors.jsonl").read_bytes()
+    report(config.run)
+    assert (config.run / "errors.jsonl").read_bytes() == before
+    assert "escalation_rate" not in (config.run / "comparison.csv").read_text()

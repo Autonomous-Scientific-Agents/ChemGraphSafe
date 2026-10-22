@@ -145,6 +145,8 @@ class Config(Record):
     models: list[ModelConfig]
     curator: ModelConfig | None = None
     annotation_rule: Literal["scisafetybench-risk-v1"] | None = None
+    # Runtime authorization is bound to runs, not immutable dataset/freeze semantics.
+    hosted_processing_approval_file: str | None = Field(default=None, min_length=1)
     budget: BudgetConfig = Field(default_factory=BudgetConfig)
     runner: RunnerConfig = Field(default_factory=RunnerConfig)
     root: Path = Field(default=Path("."), exclude=True)

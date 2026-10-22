@@ -1,13 +1,15 @@
 project_root = ".."
 policy_file = "policies/triage-chem-materials-oversight-v0.1.json"
 annotation_rule = "scisafetybench-risk-v1"
-run_dir = "runs/scisafetybench-chem-materials-v1"
+run_dir = "runs/scisafetybench-chem-materials-v2"
 offline = false
+# Configure only after documented approval; no approval is supplied by this preset.
+# hosted_processing_approval_file = ".local/approvals/scisafetybench.json"
 
 [data]
 loader = "scisafetybench"
 protocol = "challenge_eval"
-directory = ".local/data/scisafetybench-chem-materials-v1"
+directory = ".local/data/scisafetybench-chem-materials-v2"
 revision = "9db8659086fc7acc0be02f8087b189e6585cf1ea"
 count = 80
 seed = 42

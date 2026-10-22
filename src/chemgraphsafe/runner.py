@@ -9,6 +9,7 @@ from .config import Config
 from .data import annotations, ensure_unfrozen, examples, freeze, prepare, verify_freeze
 from .models import Annotation, Example, Prediction, PredictionRow, Request
 from .provenance import EXECUTION_VERSION, environment_identity
+from .rights import check_hosted_rights
 from .storage import code_hash, digest, file_hash, read_json, read_rows, write_json, write_rows
 
 FATAL_CODES = {
@@ -32,11 +33,6 @@ def ledger_for(config: Config):
     return Ledger(
         config.path(config.budget.ledger), config.budget.max_usd, config.budget.max_attempts
     )
-
-
-def check_hosted_rights(rows: list[Example]):
-    if any(not e.hosted_processing_allowed or not e.rights_evidence for e in rows):
-        raise ValueError("Hosted processing is not authorized in every example's rights record")
 
 
 def predict_under_policy(adapter, request: Request, policy: dict) -> Prediction:
@@ -100,7 +96,8 @@ def curate(config: Config):
     if file_hash(config.dataset / "examples.jsonl") != prepared["examples_hash"]:
         raise ValueError("Prepared examples changed")
     rows = examples(config)
-    check_hosted_rights(rows)
+    if not config.offline:
+        check_hosted_rights(rows, config=config, models=[config.curator])
     existing = annotations(config)
     for annotation in existing.values():
         annotation.prediction.validate_policy(config.policy)
@@ -136,8 +133,9 @@ def curate(config: Config):
 
 
 def _run_models(config: Config, rows: list[Example], split: dict, identity: dict, run_path):
+    approval = None
     if not config.offline:
-        check_hosted_rights(rows)
+        approval = check_hosted_rights(rows, config=config, models=config.models)
     ledger = ledger_for(config)
     # Preflight every model without inference before deriving the final execution identity.
     with ExitStack() as cleanup:
@@ -146,10 +144,10 @@ def _run_models(config: Config, rows: list[Example], split: dict, identity: dict
             adapter = build_model(config, model, ledger)
             cleanup.callback(adapter.close)
             adapters.append((model, adapter))
-        return _run_preflighted(config, rows, split, identity, run_path, ledger, adapters)
+        return _run_preflighted(config, rows, split, identity, run_path, ledger, adapters, approval)
 
 
-def _run_preflighted(config, rows, split, identity, run_path, ledger, adapters):
+def _run_preflighted(config, rows, split, identity, run_path, ledger, adapters, approval=None):
     replay_hashes = {
         m.name: file_hash(config.path(m.replay_file))
         for m in config.models
@@ -164,6 +162,9 @@ def _run_preflighted(config, rows, split, identity, run_path, ledger, adapters):
             m.name: adapter.runtime_provenance for m, adapter in adapters if m.adapter == "codex"
         },
     }
+    if approval is not None:
+        execution["hosted_processing_approval"] = approval
+        execution["hosted_processing_approval_hash"] = digest(approval)
     execution_hash = digest(execution)
     run_key = digest(
         {
