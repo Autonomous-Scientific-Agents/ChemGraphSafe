@@ -10,7 +10,6 @@ from .adapters import parse_classification
 from .budget import BudgetExceeded
 from .models import Prediction
 from .prompts import (
-    CODEX_BASE_INSTRUCTIONS,
     classification_input,
     classification_instructions,
     classification_schema,
@@ -159,9 +158,7 @@ async def validate_selection(codex, model, effort):
         seen.add(cursor)
 
 
-async def start_thread(
-    sdk, codex, *, model, cwd, instructions, config, base_instructions=CODEX_BASE_INSTRUCTIONS
-):
+async def start_thread(sdk, codex, *, model, cwd, instructions, config, base_instructions):
     """Keep the typed start response that the high-level SDK otherwise discards."""
     started = plain(
         await codex._client.thread_start(
@@ -182,9 +179,7 @@ async def start_thread(
     return sdk.AsyncThread(codex, started["thread"]["id"]), started
 
 
-def runtime_identity(
-    sdk, codex, effective, started, instructions, schema, base_instructions=CODEX_BASE_INSTRUCTIONS
-):
+def runtime_identity(sdk, codex, effective, started, instructions, schema, base_instructions):
     server = plain(codex.metadata)["serverInfo"]
     result = {
         "sdk_version": sdk.__version__,

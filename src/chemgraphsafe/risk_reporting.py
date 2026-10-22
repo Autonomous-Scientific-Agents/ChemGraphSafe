@@ -2,7 +2,7 @@
 
 from .models import RISK_TYPES, Prediction, policy_labels
 from .reporting import _fscore, rate
-from .scisafetybench import DATA_PATH, REVISION, SOURCE_FILES
+from .scisafetybench import DATA_PATH, RECORDS_PER_FILE, REVISION, SOURCE_FILES, example_id
 from .storage import atomic_text, digest
 
 
@@ -32,10 +32,10 @@ def validate_references(refs: list[dict], *, mock: bool):
             or ref.get("source_revision") != REVISION
             or filename not in SOURCE_FILES
             or not index.isdecimal()
-            or not 0 <= int(index) < 40
+            or not 0 <= int(index) < RECORDS_PER_FILE
             or ref.get("source_split") != f"{DATA_PATH}/{filename}"
             or ref["domain"] != SOURCE_FILES[filename]["domain"]
-            or ref["id"] != "scisafetybench-" + digest([REVISION, filename, int(index)])[:20]
+            or ref["id"] != example_id(filename, int(index))
         ):
             raise ValueError("Invalid source-native risk-type reference provenance")
 

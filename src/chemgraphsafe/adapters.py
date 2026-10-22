@@ -94,7 +94,7 @@ def _laya_gate_state(answer: dict) -> str | None:
     return state
 
 
-def _laya_input_truncated(body: dict, *, key: str = "triage") -> bool:
+def _laya_input_truncated(body: dict, *, key: str) -> bool:
     """Validate Laya 0.4.13's per-request truncation report."""
     usage = body.get("usage")
     if not isinstance(usage, dict):

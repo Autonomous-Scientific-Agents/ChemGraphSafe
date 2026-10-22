@@ -204,18 +204,19 @@ def report(run: Path):
     if set(keyed) - allowed:
         raise ValueError("Unexpected prediction keys")
     summary, comparison, errors = {}, [], []
-    baselines = [
-        {"name": "always-allow", "diagnostic": "ALLOW"},
-        {"name": "always-block" if binary else "always-review", "diagnostic": labels[1]},
-    ]
-    if policy_lane and not binary:
-        baselines.append({"name": "always-block", "diagnostic": "BLOCK"})
     if risk_task:
         baselines = [
             {"name": name, "diagnostic": label} for name, label in risk_baselines().items()
         ]
         if any(spec["name"] in risk_baselines() for spec in specs):
             raise ValueError("Model name is reserved for a risk-type diagnostic baseline")
+    else:
+        baselines = [
+            {"name": "always-allow", "diagnostic": "ALLOW"},
+            {"name": "always-block" if binary else "always-review", "diagnostic": labels[1]},
+        ]
+        if policy_lane and not binary:
+            baselines.append({"name": "always-block", "diagnostic": "BLOCK"})
     for spec in specs + baselines:
         name = spec["name"]
         diagnostic = spec.get("diagnostic")
@@ -478,10 +479,24 @@ def report(run: Path):
         "budget": manifest.get("budget"),
         "input_hash": digest({"references": refs, "predictions": [r.model_dump() for r in rows]}),
         "limitations": manifest["limitations"]
+        + (
+            [
+                "All referenced cases remain in accuracy and recall denominators. Errors, missing "
+                "predictions and abstentions are misses, including in class F1.",
+                "Four-class macro-F1 is unavailable when any class has no reference support.",
+                "Smoke checks have no risk-type reference; classification scores are unavailable.",
+                "All challenge cases are evaluation cases. Small slices have limited precision; "
+                "Wilson intervals do not account for within-group correlation.",
+            ]
+            if risk_task
+            else [
+                "Policy metrics are unavailable without annotations; "
+                "LLM policy labels are secondary.",
+                "Errors remain in primary rate denominators; "
+                "decided-only F1 excludes abstentions/errors.",
+            ]
+        )
         + [
-            "Policy metrics are unavailable without annotations; LLM policy labels are secondary.",
-            "Errors remain in primary rate denominators; "
-            "decided-only F1 excludes abstentions/errors.",
             "Row costs omit earlier failed resume calls; cumulative budget includes all attempts.",
             "Provider cost may be partially reported. Unknown metered costs retain reservations.",
             "Attempts-only usage counts toward the shared attempt cap; dollar costs are not "
@@ -491,18 +506,6 @@ def report(run: Path):
     }
     if risk_task:
         result["task"] = policy_task(policy)
-        result["limitations"] = (
-            manifest["limitations"]
-            + [
-                "All referenced cases remain in accuracy and recall denominators. Errors, missing "
-                "predictions and abstentions are misses, including in class F1.",
-                "Four-class macro-F1 is unavailable when any class has no reference support.",
-                "Smoke checks have no risk-type reference; classification scores are unavailable.",
-                "All challenge cases are evaluation cases. Small slices have limited precision; "
-                "Wilson intervals do not account for within-group correlation.",
-            ]
-            + result["limitations"][len(manifest["limitations"]) + 2 :]
-        )
     if rule_derived:
         result["limitations"] += [
             "Rule-derived references are provisional, not expert validated. Disagreement can "
