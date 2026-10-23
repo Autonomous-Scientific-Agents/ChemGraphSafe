@@ -16,6 +16,7 @@ training, or production enforcement. See [Join the project](#join-the-project) t
 
 ## Contents
 
+- [Requirements](#requirements)
 - [Repository Layout](#repository-layout)
 - [Jev Benchmark Quickstart](#jev-benchmark-quickstart)
 - [Run the Offline Example](#run-the-offline-example)
@@ -29,6 +30,45 @@ training, or production enforcement. See [Join the project](#join-the-project) t
 - [Interpret the Report](#interpret-the-report)
 - [Join the Project](#join-the-project)
 - [Extend the Project](#extend-the-project)
+
+## Requirements
+
+**Runtime:** Python 3.12 and [uv](https://docs.astral.sh/uv/). Workflow locking uses POSIX
+`flock`; macOS and Linux are supported. On Windows, run inside WSL 2.
+
+**Installation:**
+
+```sh
+uv sync --locked --extra dev  # install all dev dependencies; add --extra codex for the Codex adapter
+```
+
+### System Configuration
+
+|             | Cloud adapters (Jev, Argo, Codex, generic chat) | Local models (Laya, Kev)                                |
+| ----------- | ----------------------------------------------- | ------------------------------------------------------- |
+| **GPU**     | Not required                                    | Not required; both run CPU-only (float32)               |
+| **CPU**     | Any modern multi-core CPU                       | 4–16 threads recommended (Kev: 4, Laya: 16)             |
+| **RAM**     | ~512 MB for the CLI                             | ~4–8 GB for model weights; Kev 0.8B in float32 ≈ 3.2 GB |
+| **Disk**    | Minimal                                         | HuggingFace checkpoint cache + source clone             |
+| **Network** | Required for live inference                     | Loopback only after the initial model download          |
+
+No GPU is needed for any workflow except the fine-tuning contributor track.
+
+### API Keys
+
+Env vars are not loaded from `.env`; export them in the shell before running live commands.
+
+| Adapter          | Env var                     | Notes                                                                              |
+| ---------------- | --------------------------- | ---------------------------------------------------------------------------------- |
+| Jev (OpenRouter) | `OPENROUTER_API_KEY`        | Required for all Jev `smoke` and `evaluate` runs                                   |
+| Argo             | `ARGO_USER`                 | Argonne username; endpoint must be reachable from your network                     |
+| Generic chat     | `CHEMGRAPHSAFE_LLM_API_KEY` | Any OpenAI-compatible endpoint configured in the TOML                              |
+| Codex            | —                           | Run `codex login` to establish a ChatGPT session; no env var needed                |
+| Laya (local)     | —                           | No API key; service runs on loopback                                               |
+| Kev (local)      | optional                    | Set `api_key_env` in the TOML and export that variable if the server requires auth |
+
+All live commands share a single SQLite budget ledger at `.local/state/pilot-budget.sqlite`
+(**$10 / 500 attempts** total across all runs). Missing rates or credentials fail before inference.
 
 ## Repository Layout
 
