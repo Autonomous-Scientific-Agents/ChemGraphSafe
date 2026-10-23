@@ -47,7 +47,7 @@ uv sync --locked --extra dev  # install all dev dependencies; add --extra codex 
 | **Disk**    | Minimal                                         | HuggingFace checkpoint cache + source clone             |
 | **Network** | Required for live inference                     | Loopback only after the initial model download          |
 
-No GPU is needed for any workflow except the fine-tuning contributor track.
+No GPU is needed except for the fine-tuning track. Do not paste safety-dataset request text into issues, pull requests, or Slack; share aggregate metrics and ID-only errors.
 
 ### API Keys
 
@@ -477,9 +477,6 @@ for curation, generic endpoints, accounting, and versioned evaluation instructio
    [contribution issue template](https://github.com/Autonomous-Scientific-Agents/ChemGraphSafe/issues/new/choose).
    State the track, the observable deliverable, and the proof command.
 5. Open a pull request that passes the checks below.
-
-No GPU is needed except for the fine-tuning track. Do not paste safety-dataset request text into
-issues, pull requests, or Slack; share aggregate metrics and ID-only errors.
 
 ## Extend the Project
 
