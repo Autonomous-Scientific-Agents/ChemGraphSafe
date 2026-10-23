@@ -14,7 +14,23 @@ The longer-term goal is a safety layer for the [ChemGraph](https://github.com/ar
 agent. This milestone covers request triage only: no response evaluation, agent/tool execution,
 training, or production enforcement. See [Join the project](#join-the-project) to contribute.
 
-## Repository layout
+## Contents
+
+- [Jev Benchmark Quickstart](#jev-benchmark-quickstart)
+- [Run the Offline Example](#run-the-offline-example)
+- [Prepare the Real Pilot](#prepare-the-real-pilot)
+- [Local Kev Decisions](#local-kev-decisions)
+- [Run Jev When Credentials Are Available](#run-jev-when-credentials-are-available)
+- [Binary SciHazard Benchmark](#binary-scihazard-benchmark)
+- [SciSafetyBench Chemistry and Materials Challenge](#scisafetybench-chemistry-and-materials-challenge)
+- [Run Laya Locally](#run-laya-locally)
+- [Use Argo or Codex](#use-argo-or-codex)
+- [Interpret the Report](#interpret-the-report)
+- [Join the Project](#join-the-project)
+- [Extend the Project](#extend-the-project)
+- [Repository Layout](#repository-layout)
+
+## Repository Layout
 
 ```
 ChemGraphSafe/
@@ -78,7 +94,7 @@ The three extension points are `DatasetLoader`, `DecisionModel`, and `Labeler` i
 [`models.py`](src/chemgraphsafe/models.py). Register new loaders in `DATASET_LOADERS`
 (`data.py`) and new adapters in `build_model` (`adapters.py`).
 
-## Jev benchmark quickstart
+## Jev Benchmark Quickstart
 
 These commands run the real chemistry/materials datasets with Jev through OpenRouter.
 Use Python 3.12 and [uv](https://docs.astral.sh/uv/) on macOS/Linux, and run commands from this
@@ -180,7 +196,7 @@ remain excluded. This is the full eligible **chemistry subset**, not the full 12
   and `comparison.csv`. Share aggregate reports and the configuration used; keep credentials,
   raw dataset requests, and local approval records private.
 
-## Run the offline example
+## Run the Offline Example
 
 Requires Python 3.12 and [uv](https://docs.astral.sh/uv/). Tested on macOS/Linux; local workflow
 locking currently uses POSIX `flock`.
@@ -195,7 +211,7 @@ Open `runs/offline/report.md`. The owned, harmless fixtures have **synthetic ref
 replayed predictions**. All outputs explicitly say MOCK/OFFLINE; they are not model measurements.
 The first evaluation prepares a local fixture freeze. Subsequent identical invocations resume.
 
-## Prepare the real pilot
+## Prepare the Real Pilot
 
 ```sh
 uv run chemgraphsafe data prepare --config configs/pilot.toml
@@ -212,13 +228,13 @@ seeded case order. Three-way policy metrics are unavailable until the separate a
 Raw source answers and reasoning are never sent to classifiers. Source labels are references,
 not a claim of independently validated ChemGraphSafe ground truth.
 
-## Local Kev decisions
+## Local Kev Decisions
 
 The [Kev adapter](docs/kev-adapter.md) connects to a separately managed, pinned loopback server.
 Use `configs/kev-local.toml` for setup. It shares the attempt ledger and records runtime provenance.
 No model installation or startup occurs in the adapter. Native probabilities do not establish chemistry calibration.
 
-## Run Jev when credentials are available
+## Run Jev When Credentials Are Available
 
 Set `OPENROUTER_API_KEY` locally, verify the prices in `configs/pilot.toml`, then:
 
@@ -239,7 +255,7 @@ retries, curation, smoke, and versioned reruns. Unknown charges retain their res
 ceilings are estimates based on configured prices; an actual charge above its reservation stops
 the run and is disclosed. Budgets may prevent a full rerun. Missing rates fail before inference.
 
-## Binary SciHazard benchmark
+## Binary SciHazard Benchmark
 
 SciHazard supplies benign/harmful source labels. For a forced **ALLOW / BLOCK** benchmark, use
 `configs/pilot-binary.toml`. The original three-way policy remains the default. Binary mode asks
@@ -273,7 +289,7 @@ Binary policies also work with Jev, Laya, Argo, Codex, generic chat, and offline
 `policy_file = "policies/triage-binary-v0.1.json"` in a configuration with new data/run directories;
 no separate mode flag is needed. See [evaluation and versioning](docs/evaluation.md).
 
-## SciSafetyBench chemistry and materials challenge
+## SciSafetyBench Chemistry and Materials Challenge
 
 `configs/scisafetybench.toml` evaluates all **80 prompts (40 chemistry + 40 materials science)**
 under one shared ALLOW/REVIEW/BLOCK oversight policy, using the existing Jev adapter. The original
@@ -324,7 +340,7 @@ domain slices, and constant-category baselines. These measure source-category ag
 they do not reproduce the original paper's agent-safety scores. See the
 [risk-type workflow and compatibility contract](docs/scisafetybench-risk-type.md).
 
-## Run Laya locally
+## Run Laya Locally
 
 `configs/laya-local.toml` uses Laya 0.4.13 on CPU at numeric loopback only. The example pins the
 `english` checkpoint to revision `55cf4c4ebb4ebe31b2550e8bdf3bd21b99753851`; `/health` must
@@ -401,7 +417,7 @@ every attempt shares the 500-attempt cap, but subscription/institutional usage h
 estimate and does not consume the metered $10 allowance. See [LLM setup](docs/llm-adapters.md)
 for curation, generic endpoints, accounting, and versioned evaluation instructions.
 
-## Interpret the report
+## Interpret the Report
 
 - SciHazard primary: source-label interception recall with benign BLOCK/REVIEW rates and burden.
 - SciSafetyBench triage: provisional rule-reference agreement and escalation side by side on all
@@ -419,7 +435,7 @@ for curation, generic endpoints, accounting, and versioned evaluation instructio
   `comparison.csv` is the compact evaluation comparison. `errors.jsonl` and `errors.csv` contain
   IDs and fixed issue codes; join locally to the ignored dataset to inspect request text.
 
-## Join the project
+## Join the Project
 
 1. Register for the hackathon at [luma.com/ku88xh92](https://luma.com/ku88xh92) and join the
    hackathon Slack from the [hackathon homepage](https://llmhackathon.github.io/).
@@ -435,7 +451,7 @@ for curation, generic endpoints, accounting, and versioned evaluation instructio
 No GPU is needed except for the fine-tuning track. Do not paste safety-dataset request text into
 issues, pull requests, or Slack; share aggregate metrics and ID-only errors.
 
-## Extend the project
+## Extend the Project
 
 Start with [CONTRIBUTING.md](CONTRIBUTING.md) and [the contributor tracks](docs/contributor-tracks.md).
 See [dataset provenance](docs/dataset-card.md), [evaluation and versioning](docs/evaluation.md),
