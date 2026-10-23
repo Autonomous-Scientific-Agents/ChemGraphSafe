@@ -1,18 +1,13 @@
 # ChemGraphSafe
 
-An extensible research starter for evaluating chemistry **request triage**: ALLOW, REVIEW, or BLOCK.
-Adapters support **Jev through OpenRouter's Decisions API**, a **local Laya service**, **hosted
-Argo**, **Codex with a ChatGPT login**, and configurable OpenAI-compatible chat endpoints. Argo
-and Codex can classify requests or generate provisional curation labels. Their contracts are
-tested offline; live measurements are a separate step.
+ChemGraphSafe is a project for the [Open Scientific Intelligence (OSI) Hackathon](https://llmhackathon.github.io/),
+October 21–22, 2026, formerly the LLM Hackathon for Applications in Materials Science & Chemistry. This is extensible research starter for evaluating chemistry **request triage**: ALLOW, REVIEW, or BLOCK. Adapters support **Jev through OpenRouter's Decisions API**, a **local Laya service**, **hosted Argo**, **Codex with a ChatGPT login**, and configurable OpenAI-compatible chat endpoints. Argo and Codex can classify requests or generate provisional curation labels. Their contracts are tested offline; live measurements are a separate step. The longer-term goal is a safety layer for the [ChemGraph](https://github.com/argonne-lcf/ChemGraph) agent. This milestone covers request triage only: no response evaluation, agent/tool execution, training, or production enforcement. See [Join the project](#join-the-project) to contribute.
+
+---
 
 **Project website:** <https://autonomous-scientific-agents.github.io/ChemGraphSafe/>
 
-ChemGraphSafe is a project for the [Open Scientific Intelligence (OSI) Hackathon](https://llmhackathon.github.io/),
-October 21–22, 2026, formerly the LLM Hackathon for Applications in Materials Science & Chemistry.
-The longer-term goal is a safety layer for the [ChemGraph](https://github.com/argonne-lcf/ChemGraph)
-agent. This milestone covers request triage only: no response evaluation, agent/tool execution,
-training, or production enforcement. See [Join the project](#join-the-project) to contribute.
+---
 
 ## Contents
 
