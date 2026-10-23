@@ -1,0 +1,9 @@
+/* Decision label colours — light mode */
+.allow  { color: #1a7f37; font-weight: 700; font-family: var(--md-code-font-family); }
+.review { color: #9a6700; font-weight: 700; font-family: var(--md-code-font-family); }
+.block  { color: #cf222e; font-weight: 700; font-family: var(--md-code-font-family); }
+
+/* Decision label colours — dark mode */
+[data-md-color-scheme="slate"] .allow  { color: #3fb950; }
+[data-md-color-scheme="slate"] .review { color: #d29922; }
+[data-md-color-scheme="slate"] .block  { color: #f85149; }

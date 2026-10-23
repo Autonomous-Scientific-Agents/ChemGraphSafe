@@ -17,6 +17,9 @@ runs/
 .DS_Store
 .claudex-loop-install.json
 
+# MkDocs build output
+/site/
+
 # Raw dataset and evaluation
 sos_bench_dataset_evaluation/benchmark_records.csv
 sos_bench_dataset_evaluation/evaluation_results.csv
