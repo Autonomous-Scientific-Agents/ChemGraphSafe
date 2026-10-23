@@ -15,6 +15,7 @@ dependencies = ["httpx>=0.27,<1", "pydantic>=2.9,<3", "typer>=0.12,<1", "numpy>=
 dev = ["pytest>=8,<10", "ruff>=0.8,<1"]
 # Allow SDK/runtime upgrades; uv.lock records the pair verified by the contract tests.
 codex = ["openai-codex>=0.163.0,<1"]
+docs  = ["mkdocs-material>=9,<10"]
 
 [project.scripts]
 chemgraphsafe = "chemgraphsafe.cli:app"
@@ -28,7 +29,7 @@ testpaths = ["tests"]
 [tool.ruff]
 line-length = 100
 target-version = "py312"
-extend-exclude = [".agents", ".claude"]
+extend-exclude = [".agents", ".claude", "sos_bench_dataset_evaluation"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B"]

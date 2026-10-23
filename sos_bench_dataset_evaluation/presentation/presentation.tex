@@ -1,0 +1,53 @@
+\documentclass{beamer}
+
+\usetheme{CambridgeUS}
+
+\title{Benchmarking of SOSBench Dataset}
+\author{Abdullah al Azmi}
+\institute{Islamic University of Technology (IUT), Gazipur, Bangladesh}
+\date{\today}
+
+\begin{document}
+
+% Title slide
+\begin{frame}
+    \titlepage
+\end{frame}
+
+% Slide 1: Methodology
+\begin{frame}{Methodology}
+    \begin{itemize}
+        \item Converted the raw SOSBench dataset into a
+              decision-model-compatible dataset using
+              \texttt{Gemma-4-31B-it}.
+
+        \item The choice of model was arbitrary. Anyone can
+              plug in their own Hugging Face access token and use
+              a different model in the notebook.
+
+        \item The raw dataset has three features. The model
+              was instructed to generate a state, questions, and
+              correct answers from them. The full pipeline is in
+              the notebook.
+
+        \item Cloned the Kev model and ran it on the cloud.
+              Run instructions are in the notebook comments.
+
+        \item Kev then benchmarked the converted dataset.
+
+        \item \textbf{Note:} The output was not mapped to the
+              ALLOW/BLOCK/REVIEW order. The current outputs can be
+              mapped to these labels afterwards with a Python
+              dictionary.
+    \end{itemize}
+\end{frame}
+
+% Thank you slide
+\begin{frame}
+    \vfill
+    \centering
+    {\Huge Thank You!}
+    \vfill
+\end{frame}
+
+\end{document}

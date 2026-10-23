@@ -1,0 +1,62 @@
+site_name: ChemGraphSafe
+site_description: Chemistry request triage for safer scientific agents
+site_url: https://autonomous-scientific-agents.github.io/ChemGraphSafe/
+repo_url: https://github.com/Autonomous-Scientific-Agents/ChemGraphSafe
+repo_name: Autonomous-Scientific-Agents/ChemGraphSafe
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: teal
+      accent: teal
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: teal
+      accent: teal
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.top
+    - navigation.sections
+    - search.highlight
+    - search.suggest
+    - content.code.copy
+    - content.action.edit
+
+markdown_extensions:
+  - admonition
+  - tables
+  - attr_list
+  - md_in_html
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+
+extra_css:
+  - stylesheets/extra.css
+
+nav:
+  - Home: index.md
+  - Documentation:
+      - Dataset Card: dataset-card.md
+      - Model Card: model-card.md
+      - Evaluation & Versioning: evaluation.md
+      - LLM Adapters: llm-adapters.md
+      - Kev Adapter: kev-adapter.md
+      - SciSafetyBench Loader: scisafetybench-loader.md
+      - SciSafetyBench Risk Type: scisafetybench-risk-type.md
+      - Verification: verification.md
+  - Contributing:
+      - Contributor Tracks: contributor-tracks.md
