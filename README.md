@@ -14,6 +14,70 @@ The longer-term goal is a safety layer for the [ChemGraph](https://github.com/ar
 agent. This milestone covers request triage only: no response evaluation, agent/tool execution,
 training, or production enforcement. See [Join the project](#join-the-project) to contribute.
 
+## Repository layout
+
+```
+ChemGraphSafe/
+├── src/chemgraphsafe/       # All source code (one package)
+│   ├── models.py            # Typed data records + extension protocols (DatasetLoader, DecisionModel, Labeler)
+│   ├── config.py            # TOML schema; all paths resolve relative to project_root
+│   ├── data.py              # Dataset loaders, deduplication/grouping, prepare/freeze lifecycle
+│   ├── adapters.py          # HTTP model adapters (Jev decisions, chat, Argo, replay)
+│   ├── codex.py             # Codex adapter (optional SDK; lazy-loaded)
+│   ├── kev.py               # Pinned loopback Kev adapter (shared HTTP transport and budget ledger)
+│   ├── scisafetybench.py    # SciSafetyBench chemistry/materials loader and provisional references
+│   ├── runner.py            # evaluate/smoke/curate workflows; run-identity and resume logic
+│   ├── budget.py            # SQLite spend ledger shared across all live commands
+│   ├── reporting.py         # Metrics computation and report generation
+│   ├── risk_reporting.py    # Source-category classification metrics (risk-type task)
+│   ├── prompts.py           # Classification instructions shared by HTTP and Codex adapters
+│   ├── provenance.py        # Non-secret execution provenance recorded with each run
+│   ├── rights.py            # Destination-scoped authorization for hosted dataset processing
+│   ├── storage.py           # Canonical hashes, atomic file writes, POSIX workflow locks
+│   ├── providers.py         # Argo model name registry
+│   └── cli.py               # Typer CLI entry-points (data prepare/freeze, evaluate, smoke, curate, report)
+│
+├── configs/                 # Ready-to-use TOML configurations
+│   ├── offline.toml         # Safe local run using fixture replays (no API key needed)
+│   ├── pilot.toml           # Real pilot: SciHazard dataset + Jev via OpenRouter
+│   ├── pilot-binary.toml    # Binary ALLOW/BLOCK variant of the SciHazard pilot
+│   ├── scisafetybench.toml  # SciSafetyBench 80-prompt triage evaluation
+│   ├── scisafetybench-risk-type.toml  # SciSafetyBench four-category risk-type classification
+│   ├── argo.toml            # Argo (Argonne-hosted) baseline
+│   ├── codex.toml           # Codex (ChatGPT login) baseline
+│   ├── kev-local.toml       # Kev pinned loopback service
+│   └── laya-local.toml      # Laya CPU loopback service
+│
+├── tests/                   # pytest suite — all offline, mock HTTP only
+├── fixtures/                # Owned harmless examples + pre-recorded predictions (checked in)
+├── policies/                # Policy definition JSON files
+│   ├── triage-v0.1.json                        # Default three-way ALLOW/REVIEW/BLOCK policy
+│   ├── triage-binary-v0.1.json                 # Binary ALLOW/BLOCK policy
+│   ├── triage-chem-materials-oversight-v0.1.json  # Chemistry/materials oversight policy
+│   └── scisafetybench-risk-type-v1.json        # Four-category risk-type policy
+├── docs/                    # Topic-specific documentation
+│   ├── evaluation.md        # Versioning, freeze/run identity, experiment discipline
+│   ├── llm-adapters.md      # Adapter auth, accounting, how to add a new adapter
+│   ├── kev-adapter.md       # Kev local adapter contract and setup
+│   ├── dataset-card.md      # Source provenance, rights, and dataset construction notes
+│   ├── model-card.md        # Model configuration reference
+│   ├── verification.md      # How contracts and leakage checks work
+│   ├── contributor-tracks.md# Four independent work tracks for contributors
+│   ├── scisafetybench-loader.md       # Loader contract and approval workflow for SciSafetyBench
+│   └── scisafetybench-risk-type.md    # Risk-type workflow and compatibility contract
+├── sos_bench_dataset_evaluation/  # SOSBench dataset evaluation analysis and results
+├── site/                    # Project website source
+├── PLAN.md                  # Original implementation plan (reference spec)
+├── PLAN-REVIEW-LOG.md       # Independent review record
+├── CONTRIBUTING.md          # How to contribute, checks, and experiment discipline
+├── AGENTS.md                # Instructions for AI coding agents working in this repo
+└── pyproject.toml           # Package metadata, dependencies, tool configuration
+```
+
+The three extension points are `DatasetLoader`, `DecisionModel`, and `Labeler` in
+[`models.py`](src/chemgraphsafe/models.py). Register new loaders in `DATASET_LOADERS`
+(`data.py`) and new adapters in `build_model` (`adapters.py`).
+
 ## Jev benchmark quickstart
 
 These commands run the real chemistry/materials datasets with Jev through OpenRouter.
@@ -31,10 +95,10 @@ before live inference. On a fresh checkout, **prepare and freeze the dataset bef
 cases locally. No manual dataset download is needed. Preparation, rule annotation, freezing,
 and reporting make no model inference calls; `smoke` and `evaluate` call Jev.
 
-| Benchmark | Cases sent to Jev | Headline evaluation | Decisions |
-|---|---:|---|---|
-| SciSafetyBench chemistry/materials | 80 | All 80 cases | ALLOW / REVIEW / BLOCK |
-| SciHazard eligible chemistry pool | 228 | 182 evaluation cases; 46 development cases reported separately | ALLOW / BLOCK |
+| Benchmark                          | Cases sent to Jev | Headline evaluation                                            | Decisions              |
+| ---------------------------------- | ----------------: | -------------------------------------------------------------- | ---------------------- |
+| SciSafetyBench chemistry/materials |                80 | All 80 cases                                                   | ALLOW / REVIEW / BLOCK |
+| SciHazard eligible chemistry pool  |               228 | 182 evaluation cases; 46 development cases reported separately | ALLOW / BLOCK          |
 
 ### Run SciSafetyBench with Jev
 
@@ -77,12 +141,12 @@ cp -n configs/pilot-binary.toml configs/jev-scihazard-full-binary.toml
 
 In the copied file, replace these existing values, keeping the other settings unchanged:
 
-| Setting | Value |
-|---|---|
-| Top-level `run_dir` | `"runs/jev-scihazard-full-binary-v2"` |
-| `[data]` → `directory` | `".local/data/jev-scihazard-full-binary-v1"` |
-| `[data]` → `count` | `228` |
-| `[data]` → `minimum_per_class` | `50` |
+| Setting                        | Value                                        |
+| ------------------------------ | -------------------------------------------- |
+| Top-level `run_dir`            | `"runs/jev-scihazard-full-binary-v2"`        |
+| `[data]` → `directory`         | `".local/data/jev-scihazard-full-binary-v1"` |
+| `[data]` → `count`             | `228`                                        |
+| `[data]` → `minimum_per_class` | `50`                                         |
 
 Leave `inherited_freeze` commented out: the full pool differs from the 100-case pilot.
 SciHazard supplies source labels, so it does not need the `data annotate` step:
