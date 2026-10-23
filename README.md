@@ -16,6 +16,7 @@ training, or production enforcement. See [Join the project](#join-the-project) t
 
 ## Contents
 
+- [Repository Layout](#repository-layout)
 - [Jev Benchmark Quickstart](#jev-benchmark-quickstart)
 - [Run the Offline Example](#run-the-offline-example)
 - [Prepare the Real Pilot](#prepare-the-real-pilot)
@@ -28,7 +29,6 @@ training, or production enforcement. See [Join the project](#join-the-project) t
 - [Interpret the Report](#interpret-the-report)
 - [Join the Project](#join-the-project)
 - [Extend the Project](#extend-the-project)
-- [Repository Layout](#repository-layout)
 
 ## Repository Layout
 
@@ -101,8 +101,8 @@ Use Python 3.12 and [uv](https://docs.astral.sh/uv/) on macOS/Linux, and run com
 repository's root:
 
 ```sh
-uv sync --locked --extra dev
-export OPENROUTER_API_KEY="your-key"
+uv sync --locked --extra dev           # install all dev dependencies from the lockfile
+export OPENROUTER_API_KEY="your-key"  # set your OpenRouter API key in the shell
 ```
 
 The CLI does not load `.env` automatically. Check the model and pricing in the selected TOML
@@ -122,9 +122,9 @@ First download the 40 chemistry and 40 materials-science prompts, generate provi
 reference labels from their risk categories, and freeze the experiment:
 
 ```sh
-uv run chemgraphsafe data prepare --config configs/scisafetybench.toml
-uv run chemgraphsafe data annotate --config configs/scisafetybench.toml
-uv run chemgraphsafe data freeze --config configs/scisafetybench.toml
+uv run chemgraphsafe data prepare --config configs/scisafetybench.toml   # download and verify the 80 SciSafetyBench prompts
+uv run chemgraphsafe data annotate --config configs/scisafetybench.toml  # derive provisional BLOCK/REVIEW labels from risk categories
+uv run chemgraphsafe data freeze --config configs/scisafetybench.toml    # lock the dataset for reproducible evaluation
 ```
 
 Before dataset evaluation, create `.local/approvals/scisafetybench.json` using the
@@ -135,11 +135,9 @@ through OpenRouter. Uncomment the top-level `hosted_processing_approval_file` se
 are not included in Git and are not supplied by cloning this repo.
 
 ```sh
-# Check authentication and response format with five owned, harmless examples.
-uv run chemgraphsafe smoke --config configs/scisafetybench.toml
-# After the smoke test succeeds and the dataset approval is recorded:
-uv run chemgraphsafe evaluate --config configs/scisafetybench.toml
-uv run chemgraphsafe report --run runs/scisafetybench-chem-materials-v2
+uv run chemgraphsafe smoke --config configs/scisafetybench.toml              # verify auth and response format with five harmless examples
+uv run chemgraphsafe evaluate --config configs/scisafetybench.toml           # run triage on all 80 prompts (requires dataset approval)
+uv run chemgraphsafe report --run runs/scisafetybench-chem-materials-v2      # generate report.md with agreement and escalation metrics
 ```
 
 Open `runs/scisafetybench-chem-materials-v2/report.md`. Its agreement score uses
@@ -152,7 +150,7 @@ The checked-in `configs/pilot-binary.toml` selects 100 cases. For all 228 eligib
 requests (50 benign and 178 harmful), first create a separate configuration:
 
 ```sh
-cp -n configs/pilot-binary.toml configs/jev-scihazard-full-binary.toml
+cp -n configs/pilot-binary.toml configs/jev-scihazard-full-binary.toml  # create a new config for the full 228-case pool
 ```
 
 In the copied file, replace these existing values, keeping the other settings unchanged:
@@ -168,12 +166,11 @@ Leave `inherited_freeze` commented out: the full pool differs from the 100-case 
 SciHazard supplies source labels, so it does not need the `data annotate` step:
 
 ```sh
-uv run chemgraphsafe data prepare --config configs/jev-scihazard-full-binary.toml
-uv run chemgraphsafe data freeze --config configs/jev-scihazard-full-binary.toml
-uv run chemgraphsafe smoke --config configs/jev-scihazard-full-binary.toml
-# Continue after the five-case smoke test succeeds:
-uv run chemgraphsafe evaluate --config configs/jev-scihazard-full-binary.toml
-uv run chemgraphsafe report --run runs/jev-scihazard-full-binary-v2
+uv run chemgraphsafe data prepare --config configs/jev-scihazard-full-binary.toml  # download and verify all 228 eligible chemistry cases
+uv run chemgraphsafe data freeze --config configs/jev-scihazard-full-binary.toml   # lock the full-pool dataset for reproducible evaluation
+uv run chemgraphsafe smoke --config configs/jev-scihazard-full-binary.toml         # verify auth with five owned harmless examples
+uv run chemgraphsafe evaluate --config configs/jev-scihazard-full-binary.toml      # run binary triage on all 228 cases
+uv run chemgraphsafe report --run runs/jev-scihazard-full-binary-v2                # generate report.md; headline uses the 182 evaluation cases
 ```
 
 Open `runs/jev-scihazard-full-binary-v2/report.md`. All 228 cases receive inference; the
@@ -202,9 +199,9 @@ Requires Python 3.12 and [uv](https://docs.astral.sh/uv/). Tested on macOS/Linux
 locking currently uses POSIX `flock`.
 
 ```sh
-uv sync --locked --extra dev
-uv run chemgraphsafe evaluate --config configs/offline.toml
-uv run chemgraphsafe report --run runs/offline
+uv sync --locked --extra dev                                    # install all dev dependencies from the lockfile
+uv run chemgraphsafe evaluate --config configs/offline.toml     # replay fixture predictions; no API key or network needed
+uv run chemgraphsafe report --run runs/offline                  # generate report.md with MOCK/OFFLINE results
 ```
 
 Open `runs/offline/report.md`. The owned, harmless fixtures have **synthetic reference labels and
@@ -214,8 +211,8 @@ The first evaluation prepares a local fixture freeze. Subsequent identical invoc
 ## Prepare the Real Pilot
 
 ```sh
-uv run chemgraphsafe data prepare --config configs/pilot.toml
-uv run chemgraphsafe data freeze --config configs/pilot.toml
+uv run chemgraphsafe data prepare --config configs/pilot.toml  # download SciHazard, deduplicate, and sample 100 chemistry cases
+uv run chemgraphsafe data freeze --config configs/pilot.toml   # lock the dataset split and case order for reproducible evaluation
 ```
 
 Preparation downloads the pinned [SciHazard release](https://github.com/AI45Lab/DeepSafe-Sci),
@@ -239,9 +236,9 @@ No model installation or startup occurs in the adapter. Native probabilities do 
 Set `OPENROUTER_API_KEY` locally, verify the prices in `configs/pilot.toml`, then:
 
 ```sh
-uv run chemgraphsafe smoke --config configs/pilot.toml
-uv run chemgraphsafe evaluate --config configs/pilot.toml
-uv run chemgraphsafe report --run runs/pilot
+uv run chemgraphsafe smoke --config configs/pilot.toml    # verify Jev auth and response format with five harmless examples
+uv run chemgraphsafe evaluate --config configs/pilot.toml  # run triage on the 100-case SciHazard pilot
+uv run chemgraphsafe report --run runs/pilot               # generate report.md with recall, BLOCK rate, and confusion table
 ```
 
 Jev uses `https://openrouter.ai/api/alpha/decisions`, not chat completions. The model ID is explicit.
@@ -268,12 +265,11 @@ configured prices before live inference. The binary preset selects the same dete
 run, leaving the original experiment intact:
 
 ```sh
-uv run chemgraphsafe data prepare --config configs/pilot-binary.toml
-uv run chemgraphsafe data freeze --config configs/pilot-binary.toml
-uv run chemgraphsafe smoke --config configs/pilot-binary.toml
-# Continue after the five-case smoke test succeeds:
-uv run chemgraphsafe evaluate --config configs/pilot-binary.toml
-uv run chemgraphsafe report --run runs/pilot-binary-v1
+uv run chemgraphsafe data prepare --config configs/pilot-binary.toml  # prepare the binary ALLOW/BLOCK dataset version
+uv run chemgraphsafe data freeze --config configs/pilot-binary.toml   # lock the dataset; leaves the original pilot freeze intact
+uv run chemgraphsafe smoke --config configs/pilot-binary.toml         # verify auth with five owned harmless examples
+uv run chemgraphsafe evaluate --config configs/pilot-binary.toml      # run binary triage on the 100-case sample
+uv run chemgraphsafe report --run runs/pilot-binary-v1                # generate report.md with accuracy, recall, and confusion table
 ```
 
 Preparation and freezing are one-time steps for a new dataset version. To match an existing pilot's
@@ -323,16 +319,16 @@ Use `configs/scisafetybench-risk-type.toml` to predict the original four categor
 Jev, generic chat, Argo, Codex, Laya, and replay all support it.
 
 ```sh
-uv run chemgraphsafe data prepare --config configs/scisafetybench-risk-type.toml
-uv run chemgraphsafe data freeze --config configs/scisafetybench-risk-type.toml
+uv run chemgraphsafe data prepare --config configs/scisafetybench-risk-type.toml  # download and verify SciSafetyBench for risk-type task
+uv run chemgraphsafe data freeze --config configs/scisafetybench-risk-type.toml   # lock the dataset; no annotate step needed
 ```
 
 The task scores directly against source risk categories, so skip `data annotate` and `curate`.
 After the same hosted-processing approval and an explicit decision to run live inference:
 
 ```sh
-uv run chemgraphsafe evaluate --config configs/scisafetybench-risk-type.toml
-uv run chemgraphsafe report --run runs/scisafetybench-risk-type-v1
+uv run chemgraphsafe evaluate --config configs/scisafetybench-risk-type.toml  # classify all 80 prompts into four source risk categories
+uv run chemgraphsafe report --run runs/scisafetybench-risk-type-v1            # generate report.md with accuracy, macro-F1, and confusion matrices
 ```
 
 Reports include accuracy, four-class macro-F1, per-class precision/recall/F1, confusion matrices,
@@ -349,34 +345,34 @@ a separate environment so its runtime dependencies do not change ChemGraphSafe's
 On Windows, run these commands inside WSL 2 because the workflow lock requires POSIX `flock`:
 
 ```sh
-mkdir -p "$HOME/chemgraphsafe-runtimes/laya-0.4.13"
+mkdir -p "$HOME/chemgraphsafe-runtimes/laya-0.4.13"                                 # create an isolated directory for the Laya runtime
 cd "$HOME/chemgraphsafe-runtimes/laya-0.4.13"
-uv venv --python 3.12 .venv
-uv pip install --python .venv/bin/python --torch-backend=cpu 'laya[serve]==0.4.13'
+uv venv --python 3.12 .venv                                                          # separate venv to avoid changing ChemGraphSafe's lockfile
+uv pip install --python .venv/bin/python --torch-backend=cpu 'laya[serve]==0.4.13'  # install Laya with CPU-only PyTorch
 
-export LAYA_HOST=127.0.0.1
-export LAYA_PORT=18000
-export LAYA_DEVICE=cpu
-export LAYA_PRELOAD=1
-export LAYA_MODELS=english
-export LAYA_DEFAULT_MODEL=english
-export LAYA_MAX_LOADED=1
-export LAYA_THREADS=16
-export LAYA_AUTO_TASK=0
-export LAYA_JEV_STRICT=0
-export LAYA_REVISION=55cf4c4ebb4ebe31b2550e8bdf3bd21b99753851
-.venv/bin/laya-serve
+export LAYA_HOST=127.0.0.1                                      # bind to loopback only
+export LAYA_PORT=18000                                           # port the adapter expects
+export LAYA_DEVICE=cpu                                           # run inference on CPU
+export LAYA_PRELOAD=1                                            # load the model at startup
+export LAYA_MODELS=english                                       # load only the english checkpoint
+export LAYA_DEFAULT_MODEL=english                                # set the default model
+export LAYA_MAX_LOADED=1                                         # keep at most one model in memory
+export LAYA_THREADS=16                                           # CPU thread count for inference
+export LAYA_AUTO_TASK=0                                          # disable automatic task detection
+export LAYA_JEV_STRICT=0                                         # allow non-strict Jev compatibility
+export LAYA_REVISION=55cf4c4ebb4ebe31b2550e8bdf3bd21b99753851   # pin the exact checkpoint revision
+.venv/bin/laya-serve                                             # start the service; keep this terminal open
 ```
 
 Keep that terminal open. In the ChemGraphSafe checkout, prepare an independent freeze and run the
 five owned smoke cases before evaluating the 100-case SciHazard pilot:
 
 ```sh
-uv run chemgraphsafe smoke --config configs/laya-local.toml
-uv run chemgraphsafe data prepare --config configs/laya-local.toml
-uv run chemgraphsafe data freeze --config configs/laya-local.toml
-uv run chemgraphsafe evaluate --config configs/laya-local.toml
-uv run chemgraphsafe report --run runs/laya-local-v1
+uv run chemgraphsafe smoke --config configs/laya-local.toml         # verify loopback connectivity with five owned harmless examples
+uv run chemgraphsafe data prepare --config configs/laya-local.toml  # download and prepare the SciHazard 100-case pilot
+uv run chemgraphsafe data freeze --config configs/laya-local.toml   # lock the dataset for this Laya run
+uv run chemgraphsafe evaluate --config configs/laya-local.toml      # run triage via Laya; requests stay on the loopback service
+uv run chemgraphsafe report --run runs/laya-local-v1                # generate report.md with recall, BLOCK rate, and coverage
 ```
 
 These commands perform real inference, but requests stay on the loopback service and the example
@@ -407,9 +403,8 @@ before updating it. Existing Codex experiments require new data/run directories
 for the corrected prompt contract; see [evaluation versioning](docs/evaluation.md).
 
 ```sh
-uv run chemgraphsafe smoke --config configs/argo.toml
-# After selecting the Codex model and signing in:
-uv run --extra codex chemgraphsafe smoke --config configs/codex.toml
+uv run chemgraphsafe smoke --config configs/argo.toml                   # verify Argo connectivity with five owned harmless examples
+uv run --extra codex chemgraphsafe smoke --config configs/codex.toml    # verify Codex connectivity after codex login
 ```
 
 These commands perform live inference. Both examples explicitly use `budget_mode="attempts_only"`:
@@ -459,8 +454,8 @@ and [model configuration](docs/model-card.md). The implementation plan and indep
 record are in `PLAN.md` and `PLAN-REVIEW-LOG.md`.
 
 ```sh
-uv run ruff check .
-uv run pytest -q
+uv run ruff check .  # lint all source and test files
+uv run pytest -q     # run the full offline test suite
 ```
 
 Code is Apache-2.0. Downloaded datasets retain their source licenses and attribution. Keep raw
